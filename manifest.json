@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "RoHero - Uncapped Roblox Friend Requests",
-  "description": "Uncap your Roblox friend requests from 500",
-  "version": "2.5.2",
+  "name": "Uncapped Roblox Friend Requests (Fixed version)",
+  "description": "Uncap your Roblox friend requests from 500 to unlimited",
+  "version": "2.5.3",
   "icons": {
     "16": "src/images/icon-16.png",
     "32": "src/images/icon-32.png",
