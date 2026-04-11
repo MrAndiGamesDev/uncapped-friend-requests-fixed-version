@@ -4,7 +4,6 @@ let doNotShowPopup = false;
 // Function to check if the current URL matches the specified pattern
 function checkURL() {
   const url = window.location.href;
-  //console.log(`FRIEND | URL reported: ${url.includes("friends#!/friend-requests")}`)
   return url.includes("friends#!/friend-requests");
 }
 
@@ -92,7 +91,6 @@ async function fetchAndUpdateFriendRequests() {
     });
 
     const count = response.req;
-    console.log(`FRIEND | Requests count: ${count}`);
 
     if (typeof count === 'number' || typeof count === 'string') {
       const notificationElements = document.getElementsByClassName("notification-blue notification");
