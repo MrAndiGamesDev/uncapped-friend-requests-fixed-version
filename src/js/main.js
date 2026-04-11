@@ -3,11 +3,15 @@ let doNotShowPopup = false;
 
 // Declare updateInterval in a higher scope
 let updateInterval;
+let lastKnownFriendCount = 0; // New: Store the last known friend count
+
+// Helper function to send message with retry logic
+let backgroundPort;
 
 // Function to check if the current URL matches the specified pattern
 function checkURL() {
   const url = window.location.href;
-  return url.includes("friends#!/friend-requests");
+  return url.startsWith("https://www.roblox.com/users/") && url.includes("friends#!/friend-requests");
 }
 
 // Helper to wait for an element to appear in the DOM
@@ -89,17 +93,25 @@ async function displayPopupMessage() {
 // Function to display temporary messages
 function displayTemporaryMessage(message) {
   const tempMessage = document.createElement("div");
-  tempMessage.innerHTML = message;
-  tempMessage.style.position = "fixed";
-  tempMessage.style.bottom = "20px";
-  tempMessage.style.left = "50%";
-  tempMessage.style.transform = "translateX(-50%)";
-  tempMessage.style.backgroundColor = "#333";
-  tempMessage.style.color = "#fff";
-  tempMessage.style.padding = "10px 20px";
-  tempMessage.style.borderRadius = "5px";
-  tempMessage.style.zIndex = "10001";
-  tempMessage.style.fontFamily = "'Arial', sans-serif";
+  tempMessage.textContent = message; // Use textContent for safety
+
+  const styles = {
+    position: "fixed",
+    bottom: "20px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    backgroundColor: "#333",
+    color: "#fff",
+    padding: "10px 20px",
+    borderRadius: "5px",
+    zIndex: "10001",
+    fontFamily: "'Arial', sans-serif"
+  };
+
+  for (const prop in styles) {
+    tempMessage.style[prop] = styles[prop];
+  }
+
   document.body.appendChild(tempMessage);
 
   setTimeout(() => {
@@ -107,37 +119,102 @@ function displayTemporaryMessage(message) {
   }, 5000); // Message disappears after 5 seconds
 }
 
-// Helper function to send message with retry logic
+function connectToBackground() {
+  if (backgroundPort && backgroundPort.connected) {
+    return backgroundPort;
+  }
+  backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
+
+  backgroundPort.onDisconnect.addListener(() => {
+    console.warn("Background script disconnected. Attempting to reconnect on next update.");
+    backgroundPort = null; // Clear the disconnected port
+  });
+  return backgroundPort;
+}
+
 async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage(message, (response) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else {
-            resolve(response);
-          }
+      const port = connectToBackground();
+      if (!port) {
+        throw new Error("Failed to connect to background script.");
+      }
+
+      return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error("Message response timed out."));
+          if (port && port.connected) port.disconnect();
+        }, 10000); // 10 second timeout for response
+
+        port.onMessage.addListener(function handler(response) {
+          clearTimeout(timeoutId);
+          port.onMessage.removeListener(handler);
+          resolve(response);
         });
+
+        // The onDisconnect listener is now handled globally for backgroundPort
+        // No need to add another one here for the one-off message
+
+        try {
+          port.postMessage(message);
+        } catch (error) {
+          clearTimeout(timeoutId);
+          reject(new Error(`Failed to post message: ${error.message}`));
+        }
       });
-      return response;
     } catch (error) {
-      if (error.message.includes("Extension context invalidated") && i < retries - 1) {
+      if (error.message.includes("Extension context invalidated") || error.message.includes("disconnected") || error.message.includes("Failed to connect")) {
         console.warn(`Retrying message due to: ${error.message}. Attempt ${i + 1}/${retries}`);
-        await new Promise(res => setTimeout(res, delay));
+        if (i < retries - 1) {
+          await new Promise(res => setTimeout(res, delay));
+        } else {
+          throw error; // Re-throw after last retry attempt
+        }
       } else {
         throw error;
       }
     }
   }
+  throw new Error("Failed to establish communication with background script after multiple retries.");
 }
+
+// Function to update the left navigation "Friends" count
+function updateLeftNavFriendsCount(count) {
+  const leftNavFriendsCount = document.querySelector('a[href*="friends"] div.foundation-web-badge span');
+  if (leftNavFriendsCount) {
+    if (leftNavFriendsCount.innerHTML !== String(count)) { // Only update if necessary to avoid unnecessary DOM writes
+      leftNavFriendsCount.innerHTML = count;
+      leftNavFriendsCount.setAttribute('id', 'friendSubLeftNav'); // Give it a distinct ID
+      console.log("Updated left navigation Friends count to:", leftNavFriendsCount.innerHTML);
+    }
+  }
+}
+
+// MutationObserver to watch for changes in the DOM and re-apply updates
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+      // Check if any of the added nodes (or their descendants) contain the left nav friends link
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1 && (node.matches('a[href*="friends"] div.foundation-web-badge span') || node.querySelector('a[href*="friends"] div.foundation-web-badge span'))) {
+          if (lastKnownFriendCount > 0) {
+            updateLeftNavFriendsCount(lastKnownFriendCount);
+          }
+          break; // Found a relevant change, no need to check other added nodes for this mutation
+        }
+      }
+    }
+  });
+});
 
 async function fetchAndUpdateFriendRequests() {
   try {
     const response = await sendMessageWithRetry({ action: "start" });
 
     const count = response.req;
-    console.log("Fetched friend request count:", count); // Log the count
+    // Log the count
+    console.log("Fetched friend request count:", count);
+    lastKnownFriendCount = count; // Update the global last known count
 
     if (typeof count === 'number' || typeof count === 'string') {
       const notificationElements = document.getElementsByClassName("notification-blue notification");
@@ -148,6 +225,9 @@ async function fetchAndUpdateFriendRequests() {
         targetFriendSub.innerHTML = count;
         targetFriendSub.setAttribute('id', 'friendSub');
       }
+
+      // Call the new function to update the left navigation Friends count
+      updateLeftNavFriendsCount(count);
 
       if (checkURL()) {
         console.log("Current URL matches, attempting to update .friends-subtitle"); // Log URL check
@@ -160,7 +240,7 @@ async function fetchAndUpdateFriendRequests() {
           }
         });
       }
-
+      
       if (typeof count === 'number' && count < 500) {
         displayPopupMessage();
       } else if (typeof count === 'string' && count.startsWith("Error")) {
@@ -173,23 +253,34 @@ async function fetchAndUpdateFriendRequests() {
   } catch (err) {
     console.error("Error in main execution logic:", err);
 
-    // Check if the error is due to extension context invalidated
-    if (err && err.message && err.message.includes("Extension context invalidated")) {
-      // Optionally, display a user-friendly message on the page
-      console.error("Extension context invalidated. Stopping further updates.");
-      clearInterval(updateInterval); // Stop polling
-      displayTemporaryMessage("Extension needs to be reloaded to function correctly.");
+    // Check if the error is due to extension context invalidated or disconnection
+    if (err && err.message && (err.message.includes("Extension context invalidated") || err.message.includes("disconnected") || err.message.includes("Failed to connect"))) {
+      console.error("Extension context invalidated, disconnected, or failed to connect. Attempting to restart updates...");
+      clearInterval(updateInterval); // Clear current interval
+      displayTemporaryMessage("Extension connection lost. Attempting to reconnect...");
+
+      // Attempt to restart polling after a short delay
+      setTimeout(() => {
+        // Re-run the initial fetch and set the interval again
+        // This will automatically try to re-establish the connection via connectToBackground()
+        fetchAndUpdateFriendRequests();
+        updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000); // 2 seconds
+      }, 5000); // Wait 5 seconds before attempting to restart
     }
   }
 }
 
 // Main execution logic
 (async () => {
+  // Start observing the body for all changes
+  // We'll disconnect and reconnect this if needed, but for now, continuous observation.
+  observer.observe(document.body, { childList: true, subtree: true });
+  
   // Fetch immediately on load
   await fetchAndUpdateFriendRequests();
 
-  // Set up polling every 10 seconds
-  updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000); // 2 seconds
+  // Set up polling every 2 seconds
+  updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000);
 
   // Clear interval when page is unloaded
   window.onbeforeunload = () => {

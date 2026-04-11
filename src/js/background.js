@@ -44,15 +44,13 @@ async function fetchFriendRequests(rawCookie) {
   return totalRequests;
 }
 
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+function handleMessage(request, sender, sendResponse) {
   // If it returns false or nothing, the message channel closes before sendResponse can be called.
   if (request.action === "start") {
     // This function must return true to indicate that sendResponse will be called asynchronously.
     (async () => {
       try {
         const rawCookie = await getRobloxCookie();
-        // console.log("Raw Cookie:", rawCookie);
-
         const totalRequests = await fetchFriendRequests(rawCookie);
         sendResponse({ req: totalRequests });
       } catch (error) {
@@ -62,4 +60,28 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     })();
     return true; // Important: Return true to keep the message channel open
   }
-});
+}
+
+function connectToFriendRequestPort(port) {
+  if (port.name === "friendRequestPort") {
+    console.log("Content script connected to background script.");
+    port.onMessage.addListener(async function(request) {
+      if (request.action === "start") {
+        try {
+          const rawCookie = await getRobloxCookie();
+          const totalRequests = await fetchFriendRequests(rawCookie);
+          port.postMessage({ req: totalRequests });
+        } catch (error) {
+          console.error("Friend request fetching error:", error);
+          port.postMessage({ req: `Error: ${error.message}` });
+        }
+      }
+    });
+    port.onDisconnect.addListener(function() {
+      console.log("Content script disconnected from background script.");
+    });
+  }
+}
+
+chrome.runtime.onMessage.addListener(handleMessage);
+chrome.runtime.onConnect.addListener(connectToFriendRequestPort);
