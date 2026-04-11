@@ -44,10 +44,10 @@ async function fetchFriendRequests(rawCookie) {
   return totalRequests;
 }
 
-chrome.runtime.onMessage.addListener(function(request, _, sendResponse) {
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+  // If it returns false or nothing, the message channel closes before sendResponse can be called.
   if (request.action === "start") {
     // This function must return true to indicate that sendResponse will be called asynchronously.
-    // If it returns false or nothing, the message channel closes before sendResponse can be called.
     (async () => {
       try {
         const rawCookie = await getRobloxCookie();

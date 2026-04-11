@@ -1,6 +1,9 @@
 // Function to check if the popup should be shown
 let doNotShowPopup = false;
 
+// Declare updateInterval in a higher scope
+let updateInterval;
+
 // Function to check if the current URL matches the specified pattern
 function checkURL() {
   const url = window.location.href;
@@ -39,10 +42,10 @@ async function shouldShowPopup() {
 }
 
 // Function to display the popup message
-function displayPopupMessage() {
+async function displayPopupMessage() {
   // Display a popup message on the site
-  const shouldPopup = !shouldShowPopup();
-  if (shouldPopup) {
+  const showPopup = await shouldShowPopup();
+  if (showPopup) {
     const popupMessage = document.createElement("div");
     popupMessage.innerHTML = `
       <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">Uncapped Friend Requests</div>
@@ -77,20 +80,64 @@ function displayPopupMessage() {
       doNotShowAgainBtn.addEventListener("click", () => {
         popupMessage.remove(); // Remove the popup
         // Store a flag in local storage to prevent showing the popup again
-        localStorage.setItem("doNotShowPopup", true);
+        chrome.storage.sync.set({ 'doNotShowPopup': true });
       });
     }
   }
 }
 
-// Function to fetch and update friend requests
+// Function to display temporary messages
+function displayTemporaryMessage(message) {
+  const tempMessage = document.createElement("div");
+  tempMessage.innerHTML = message;
+  tempMessage.style.position = "fixed";
+  tempMessage.style.bottom = "20px";
+  tempMessage.style.left = "50%";
+  tempMessage.style.transform = "translateX(-50%)";
+  tempMessage.style.backgroundColor = "#333";
+  tempMessage.style.color = "#fff";
+  tempMessage.style.padding = "10px 20px";
+  tempMessage.style.borderRadius = "5px";
+  tempMessage.style.zIndex = "10001";
+  tempMessage.style.fontFamily = "'Arial', sans-serif";
+  document.body.appendChild(tempMessage);
+
+  setTimeout(() => {
+    tempMessage.remove();
+  }, 5000); // Message disappears after 5 seconds
+}
+
+// Helper function to send message with retry logic
+async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(response);
+          }
+        });
+      });
+      return response;
+    } catch (error) {
+      if (error.message.includes("Extension context invalidated") && i < retries - 1) {
+        console.warn(`Retrying message due to: ${error.message}. Attempt ${i + 1}/${retries}`);
+        await new Promise(res => setTimeout(res, delay));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
 async function fetchAndUpdateFriendRequests() {
   try {
-    const response = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: "start" }, resolve);
-    });
+    const response = await sendMessageWithRetry({ action: "start" });
 
     const count = response.req;
+    console.log("Fetched friend request count:", count); // Log the count
 
     if (typeof count === 'number' || typeof count === 'string') {
       const notificationElements = document.getElementsByClassName("notification-blue notification");
@@ -103,10 +150,13 @@ async function fetchAndUpdateFriendRequests() {
       }
 
       if (checkURL()) {
+        console.log("Current URL matches, attempting to update .friends-subtitle"); // Log URL check
         waitForElm(".friends-subtitle").then((friendsSubtitle) => {
+          console.log("Found .friends-subtitle. Current innerHTML:", friendsSubtitle.innerHTML); // Log current innerHTML
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
             friendsSubtitle.innerHTML = `Friend Requests (${count})`;
             friendsSubtitle.setAttribute('id', "friendsSubtitleRequests");
+            console.log("Updated .friends-subtitle to:", friendsSubtitle.innerHTML); // Log updated innerHTML
           }
         });
       }
@@ -122,6 +172,14 @@ async function fetchAndUpdateFriendRequests() {
     }
   } catch (err) {
     console.error("Error in main execution logic:", err);
+
+    // Check if the error is due to extension context invalidated
+    if (err && err.message && err.message.includes("Extension context invalidated")) {
+      // Optionally, display a user-friendly message on the page
+      console.error("Extension context invalidated. Stopping further updates.");
+      clearInterval(updateInterval); // Stop polling
+      displayTemporaryMessage("Extension needs to be reloaded to function correctly.");
+    }
   }
 }
 
@@ -131,7 +189,7 @@ async function fetchAndUpdateFriendRequests() {
   await fetchAndUpdateFriendRequests();
 
   // Set up polling every 10 seconds
-  const updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000); // 2 seconds
+  updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000); // 2 seconds
 
   // Clear interval when page is unloaded
   window.onbeforeunload = () => {
