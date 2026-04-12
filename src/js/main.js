@@ -124,7 +124,6 @@ function connectToBackground() {
     return backgroundPort;
   }
   backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
-
   backgroundPort.onDisconnect.addListener(() => {
     console.warn("Background script disconnected. Attempting to reconnect on next update.");
     backgroundPort = null; // Clear the disconnected port
@@ -151,9 +150,6 @@ async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
           port.onMessage.removeListener(handler);
           resolve(response);
         });
-
-        // The onDisconnect listener is now handled globally for backgroundPort
-        // No need to add another one here for the one-off message
 
         try {
           port.postMessage(message);
@@ -264,7 +260,7 @@ async function fetchAndUpdateFriendRequests() {
         // Re-run the initial fetch and set the interval again
         // This will automatically try to re-establish the connection via connectToBackground()
         fetchAndUpdateFriendRequests();
-        updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000); // 2 seconds
+        updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000); // 2 seconds
       }, 5000); // Wait 5 seconds before attempting to restart
     }
   }
@@ -280,7 +276,7 @@ async function fetchAndUpdateFriendRequests() {
   await fetchAndUpdateFriendRequests();
 
   // Set up polling every 2 seconds
-  updateInterval = setInterval(fetchAndUpdateFriendRequests, 2 * 1000);
+  updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000);
 
   // Clear interval when page is unloaded
   window.onbeforeunload = () => {
