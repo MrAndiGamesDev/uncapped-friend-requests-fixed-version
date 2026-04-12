@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Uncapped Roblox Friend Requests (Fixed version)",
+  "description": "Uncap your Roblox friend requests from 500 to unlimited",
+  "version": "2.5.7",
+  "icons": {
+    "16": "src/images/icon-16.png",
+    "32": "src/images/icon-32.png",
+    "48": "src/images/icon-48.png",
+    "128": "src/images/icon-128.png"
+  },
+  "permissions": ["cookies"],
+  "host_permissions": ["*://*.roblox.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.roblox.com/*"],
+      "js": ["dist/js/main.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "dist/js/background.js"
+  }
+}
