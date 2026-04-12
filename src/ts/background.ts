@@ -1,58 +1,65 @@
-interface RobloxCookie {
-  name: string;
-  value: string;
-}
-
 interface FriendRequestData {
-  data: any[]; // Adjust this interface based on the actual data structure if needed
+  data: any[];
   nextPageCursor: string | null;
-}
-
-interface MessageRequest {
-  action: "start";
 }
 
 interface MessageResponse {
   req: number | string;
 }
 
+/**
+ * Retrieves the Roblox cookie string from the browser storage.
+ */
 async function getRobloxCookie(): Promise<string> {
-  let rawCookie: string = "";
-  const cookies: RobloxCookie[] = await new Promise((resolve) => {
-    chrome.cookies.getAll({ domain: "roblox.com" }, resolve);
-  });
-
-  for (const cookie of cookies) {
-    rawCookie += `${cookie.name}=${cookie.value}; `;
+  const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
+  
+  if (!cookies || cookies.length === 0) {
+    throw new Error("No Roblox cookies found. Please log in.");
   }
 
-  if (!rawCookie) {
-    throw new Error("No cookies found.");
-  }
-
-  return rawCookie.slice(0, -2); // Remove trailing space and semicolon
+  // Efficiently join cookie names and values
+  return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
-async function fetchFriendRequests(rawCookie: string): Promise<number> {
-  let totalRequests: number = 0;
-  let cursor: string = "";
-  let hasNextPage: boolean = true;
+/**
+ * A generalized helper to call Roblox APIs with the correct credentials.
+ * @param endpoint The full URL or path for the API
+ * @param method GET, POST, etc.
+ */
+async function callRobloxAPI<T>(endpoint: string, method: string = "GET"): Promise<T> {
+  const rawCookie = await getRobloxCookie();
+
+  const response = await fetch(endpoint, {
+    method,
+    headers: {
+      "Cookie": rawCookie,
+      "Content-Type": "application/json",
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Roblox API (${method}) failed: ${response.status} ${response.statusText}`);
+  }
+
+  return await response.json() as T;
+}
+
+/**
+ * Updated fetch logic using the generalized API helper
+ */
+async function fetchTotalFriendRequestCount(): Promise<number> {
+  let totalRequests = 0;
+  let cursor = "";
+  let hasNextPage = true;
 
   while (hasNextPage) {
     const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-    const requestOptions: RequestInit = {
-      method: "GET",
-      headers: {
-        Cookie: rawCookie,
-      },
-    };
-
-    const response = await fetch(url, requestOptions);
-    const data: FriendRequestData = await response.json();
+    
+    // Call our new helper function
+    const data = await callRobloxAPI<FriendRequestData>(url);
 
     if (data.data && data.data.length > 0) {
       totalRequests += data.data.length;
-      console.log("Friend Requests:", totalRequests);
       cursor = data.nextPageCursor || "";
       hasNextPage = !!cursor;
     } else {
@@ -62,45 +69,32 @@ async function fetchFriendRequests(rawCookie: string): Promise<number> {
   return totalRequests;
 }
 
-function handleMessage(request: MessageRequest, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void): boolean {
-  // If it returns false or nothing, the message channel closes before sendResponse can be called.
-  if (request.action === "start") {
-    // This function must return true to indicate that sendResponse will be called asynchronously.
-    (async () => {
+/**
+ * Listener for the persistent Port connection (from Content Script)
+ */
+chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
+  if (port.name !== "friendRequestPort") return;
+  port.onMessage.addListener(async (message) => {
+    if (message.action === "start") {
       try {
-        const rawCookie = await getRobloxCookie();
-        const totalRequests = await fetchFriendRequests(rawCookie);
-        sendResponse({ req: totalRequests });
+        const count = await fetchTotalFriendRequestCount();
+        port.postMessage({ req: count } as MessageResponse);
       } catch (error: any) {
-        console.error("Friend request fetching error:", error);
-        sendResponse({ req: `Error: ${error.message}` });
+        console.error("Background fetch error:", error);
+        port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
       }
-    })();
-    return true; // Important: Return true to keep the message channel open
-  }
-  return false; // Return false if the message was not handled asynchronously
-}
+    }
+  });
+});
 
-function connectToFriendRequestPort(port: chrome.runtime.Port): void {
-  if (port.name === "friendRequestPort") {
-    console.log("Content script connected to background script.");
-    port.onMessage.addListener(async function(request: MessageRequest) {
-      if (request.action === "start") {
-        try {
-          const rawCookie = await getRobloxCookie();
-          const totalRequests = await fetchFriendRequests(rawCookie);
-          port.postMessage({ req: totalRequests });
-        } catch (error: any) {
-          console.error("Friend request fetching error:", error);
-          port.postMessage({ req: `Error: ${error.message}` });
-        }
-      }
-    });
-    port.onDisconnect.addListener(function() {
-      console.log("Content script disconnected from background script.");
-    });
+/**
+ * Optional: Listener for one-time messages
+ */
+chrome.runtime.onMessage.addListener((request: any, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+  if (request.action === "start") {
+    fetchTotalFriendRequestCount()
+      .then(count => sendResponse({ req: count } as MessageResponse))
+      .catch(err => sendResponse({ req: `Error: ${err.message}` } as MessageResponse));
+    return true; 
   }
-}
-
-chrome.runtime.onMessage.addListener(handleMessage);
-chrome.runtime.onConnect.addListener(connectToFriendRequestPort);
+});

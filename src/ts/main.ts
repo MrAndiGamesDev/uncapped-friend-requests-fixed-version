@@ -17,15 +17,15 @@ let doNotShowPopup: boolean = false;
 let updateInterval: number;
 let lastKnownFriendCount: number = 0; // New: Store the last known friend count
 
+// Helper function to send message with retry logic
+let backgroundPort: chrome.runtime.Port | undefined;
+
 // Global selectors for friend count elements
 const FRIEND_COUNT_SELECTORS = [
   'a[href*="friends"] div.foundation-web-badge span', // Most specific, original selector
   'a[href*="friends"] span.friend-count',             // A potential alternative
   'a[href*="friends"] .nav-menu-item-text + span'     // Another potential alternative (e.g., "Friends" text followed by count)
 ];
-
-// Helper function to send message with retry logic
-let backgroundPort: chrome.runtime.Port | undefined;
 
 // Function to check if the current URL matches the specified pattern
 function checkURL(): boolean {
@@ -109,35 +109,6 @@ async function displayPopupMessage(): Promise<void> {
   }
 }
 
-// Function to display temporary messages
-function displayTemporaryMessage(message: string): void {
-  const tempMessage: HTMLDivElement = document.createElement("div");
-  tempMessage.textContent = message; // Use textContent for safety
-
-  const styles: Partial<CSSStyleDeclaration> = {
-    position: "fixed",
-    bottom: "20px",
-    left: "50%",
-    transform: "translateX(-50%)",
-    backgroundColor: "#333",
-    color: "#fff",
-    padding: "10px 20px",
-    borderRadius: "5px",
-    zIndex: "10001",
-    fontFamily: "'Arial', sans-serif"
-  };
-
-  for (const prop in styles) {
-    (tempMessage.style as any)[prop] = (styles as any)[prop];
-  }
-
-  document.body.appendChild(tempMessage);
-
-  setTimeout(() => {
-    tempMessage.remove();
-  }, 5000); // Message disappears after 5 seconds
-}
-
 function connectToBackground(): chrome.runtime.Port {
   if (backgroundPort) {
     return backgroundPort;
@@ -169,6 +140,7 @@ async function sendMessageWithRetry(message: MessageRequest, retries: number = 3
           port.onMessage.removeListener(handler);
           resolve(response);
         };
+        
         port.onMessage.addListener(handler);
 
         try {
@@ -241,8 +213,8 @@ const observer = new MutationObserver((mutations: MutationRecord[]) => {
 async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
     const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
-
     const count: number | string = response.req;
+    
     // Log the count
     console.log("Fetched friend request count:", count);
     lastKnownFriendCount = typeof count === 'number' ? count : 0; // Update the global last known count
@@ -266,7 +238,19 @@ async function fetchAndUpdateFriendRequests(): Promise<void> {
           // Look for a span element within friendsSubtitle that might contain the count
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
             // This is a common pattern for styled numbers.
-            let countElement = friendsSubtitle.querySelector<HTMLSpanElement>('span[class*="count"], span[class*="number"], span[class*="badge"], span[class*="text-secondary"]');
+            let countElement: HTMLSpanElement | null = null;
+            
+            const selectors = [
+              'span[class*="count"]',
+              'span[class*="number"]',
+              'span[class*="badge"]',
+              'span[class*="text-secondary"]',
+            ];
+
+            for (const selector of selectors) {
+              countElement = friendsSubtitle.querySelector<HTMLSpanElement>(selector);
+              if (countElement) break;
+            }
 
             if (countElement) {
               // If a suitable span is found, update its text content
@@ -311,15 +295,6 @@ async function fetchAndUpdateFriendRequests(): Promise<void> {
     if (err && err.message && (err.message.includes("Extension context invalidated") || err.message.includes("disconnected") || err.message.includes("Failed to connect"))) {
       console.error("Extension context invalidated, disconnected, or failed to connect. Attempting to restart updates...");
       clearInterval(updateInterval); // Clear current interval
-      displayTemporaryMessage("Extension connection lost. Attempting to reconnect...");
-
-      // Attempt to restart polling after a short delay
-      setTimeout(() => {
-        // Re-run the initial fetch and set the interval again
-        // This will automatically try to re-establish the connection via connectToBackground()
-        fetchAndUpdateFriendRequests();
-        updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000); // 1 seconds
-      }, 5000); // Wait 5 seconds before attempting to restart
     }
   }
 }
