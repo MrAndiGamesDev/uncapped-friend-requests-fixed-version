@@ -1,27 +1,46 @@
+interface ChromeStorageResult {
+  doNotShowPopup?: boolean;
+}
+
+interface MessageRequest {
+  action: "start";
+}
+
+interface MessageResponse {
+  req: number | string;
+}
+
 // Function to check if the popup should be shown
-let doNotShowPopup = false;
+let doNotShowPopup: boolean = false;
 
 // Declare updateInterval in a higher scope
-let updateInterval;
-let lastKnownFriendCount = 0; // New: Store the last known friend count
+let updateInterval: number;
+let lastKnownFriendCount: number = 0; // New: Store the last known friend count
+
+// Global selectors for friend count elements
+const FRIEND_COUNT_SELECTORS = [
+  'a[href*="friends"] div.foundation-web-badge span', // Most specific, original selector
+  'a[href*="friends"] span.friend-count',             // A potential alternative
+  'a[href*="friends"] .nav-menu-item-text + span'     // Another potential alternative (e.g., "Friends" text followed by count)
+];
 
 // Helper function to send message with retry logic
-let backgroundPort;
+let backgroundPort: chrome.runtime.Port | undefined;
 
 // Function to check if the current URL matches the specified pattern
-function checkURL() {
-  const url = window.location.href;
+function checkURL(): boolean {
+  const url: string = window.location.href;
   return url.startsWith("https://www.roblox.com/users/") && url.includes("friends#!/friend-requests");
 }
 
 // Helper to wait for an element to appear in the DOM
-function waitForElm(selector) {
+function waitForElm(selector: string): Promise<Element | null> {
   return new Promise((resolve) => {
     if (document.querySelector(selector)) {
       return resolve(document.querySelector(selector));
     }
 
-    const observer = new MutationObserver((_) => {
+    const observer = new MutationObserver((_mutations: MutationRecord[]) => {
       if (document.querySelector(selector)) {
         resolve(document.querySelector(selector));
         observer.disconnect();
@@ -36,9 +55,9 @@ function waitForElm(selector) {
 }
 
 // Function to check if the popup should be shown
-async function shouldShowPopup() {
+async function shouldShowPopup(): Promise<boolean> {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['doNotShowPopup'], function(result) {
+    chrome.storage.sync.get(['doNotShowPopup'], function(result: ChromeStorageResult) {
       doNotShowPopup = result.doNotShowPopup || false;
       resolve(!doNotShowPopup);
     });
@@ -46,11 +65,11 @@ async function shouldShowPopup() {
 }
 
 // Function to display the popup message
-async function displayPopupMessage() {
+async function displayPopupMessage(): Promise<void> {
   // Display a popup message on the site
-  const showPopup = await shouldShowPopup();
+  const showPopup: boolean = await shouldShowPopup();
   if (showPopup) {
-    const popupMessage = document.createElement("div");
+    const popupMessage: HTMLDivElement = document.createElement("div");
     popupMessage.innerHTML = `
       <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">Uncapped Friend Requests</div>
       <div style="margin-bottom: 5px;">You have less than 500 friend requests.</div>
@@ -79,7 +98,7 @@ async function displayPopupMessage() {
       popupMessage.remove();
     }, 15 * 1000);
 
-    const doNotShowAgainBtn = popupMessage.querySelector("#doNotShowAgain");
+    const doNotShowAgainBtn = popupMessage.querySelector<HTMLButtonElement>("#doNotShowAgain");
     if (doNotShowAgainBtn) {
       doNotShowAgainBtn.addEventListener("click", () => {
         popupMessage.remove(); // Remove the popup
@@ -91,11 +110,11 @@ async function displayPopupMessage() {
 }
 
 // Function to display temporary messages
-function displayTemporaryMessage(message) {
-  const tempMessage = document.createElement("div");
+function displayTemporaryMessage(message: string): void {
+  const tempMessage: HTMLDivElement = document.createElement("div");
   tempMessage.textContent = message; // Use textContent for safety
 
-  const styles = {
+  const styles: Partial<CSSStyleDeclaration> = {
     position: "fixed",
     bottom: "20px",
     left: "50%",
@@ -109,7 +128,7 @@ function displayTemporaryMessage(message) {
   };
 
   for (const prop in styles) {
-    tempMessage.style[prop] = styles[prop];
+    (tempMessage.style as any)[prop] = (styles as any)[prop];
   }
 
   document.body.appendChild(tempMessage);
@@ -119,22 +138,22 @@ function displayTemporaryMessage(message) {
   }, 5000); // Message disappears after 5 seconds
 }
 
-function connectToBackground() {
-  if (backgroundPort && backgroundPort.connected) {
+function connectToBackground(): chrome.runtime.Port {
+  if (backgroundPort) {
     return backgroundPort;
   }
   backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
   backgroundPort.onDisconnect.addListener(() => {
     console.warn("Background script disconnected. Attempting to reconnect on next update.");
-    backgroundPort = null; // Clear the disconnected port
+    backgroundPort = undefined; // Clear the disconnected port
   });
   return backgroundPort;
 }
 
-async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
+async function sendMessageWithRetry(message: MessageRequest, retries: number = 3, delay: number = 1000): Promise<MessageResponse> {
   for (let i = 0; i < retries; i++) {
     try {
-      const port = connectToBackground();
+      const port: chrome.runtime.Port = connectToBackground();
       if (!port) {
         throw new Error("Failed to connect to background script.");
       }
@@ -142,23 +161,24 @@ async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
       return new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           reject(new Error("Message response timed out."));
-          if (port && port.connected) port.disconnect();
+          if (port) port.disconnect();
         }, 10000); // 10 second timeout for response
 
-        port.onMessage.addListener(function handler(response) {
+        const handler = function(response: MessageResponse) {
           clearTimeout(timeoutId);
           port.onMessage.removeListener(handler);
           resolve(response);
-        });
+        };
+        port.onMessage.addListener(handler);
 
         try {
           port.postMessage(message);
-        } catch (error) {
+        } catch (error: any) {
           clearTimeout(timeoutId);
           reject(new Error(`Failed to post message: ${error.message}`));
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       if (error.message.includes("Extension context invalidated") || error.message.includes("disconnected") || error.message.includes("Failed to connect")) {
         console.warn(`Retrying message due to: ${error.message}. Attempt ${i + 1}/${retries}`);
         if (i < retries - 1) {
@@ -175,50 +195,65 @@ async function sendMessageWithRetry(message, retries = 3, delay = 1000) {
 }
 
 // Function to update the left navigation "Friends" count
-function updateLeftNavFriendsCount(count) {
-  const leftNavFriendsCount = document.querySelector('a[href*="friends"] div.foundation-web-badge span');
+function updateLeftNavFriendsCount(count: number | string): void {
+  let leftNavFriendsCount: HTMLSpanElement | null = null;
+
+  for (const selector of FRIEND_COUNT_SELECTORS) {
+    leftNavFriendsCount = document.querySelector<HTMLSpanElement>(selector);
+    if (leftNavFriendsCount) {
+      console.log(`Found friend count element with selector: ${selector}`);
+      break;
+    }
+  }
+
   if (leftNavFriendsCount) {
-    if (leftNavFriendsCount.innerHTML !== String(count)) { // Only update if necessary to avoid unnecessary DOM writes
-      leftNavFriendsCount.innerHTML = count;
-      leftNavFriendsCount.setAttribute('id', 'friendSubLeftNav'); // Give it a distinct ID
+    if (leftNavFriendsCount.innerHTML !== String(count)) {
+      leftNavFriendsCount.innerHTML = String(count);
+      leftNavFriendsCount.setAttribute('id', 'friendSubLeftNav');
       console.log("Updated left navigation Friends count to:", leftNavFriendsCount.innerHTML);
     }
+  }
+  else {
+    console.warn("Could not find the left navigation Friends count element with any of the provided selectors.");
   }
 }
 
 // MutationObserver to watch for changes in the DOM and re-apply updates
-const observer = new MutationObserver((mutations) => {
+const observer = new MutationObserver((mutations: MutationRecord[]) => {
   mutations.forEach((mutation) => {
     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-      // Check if any of the added nodes (or their descendants) contain the left nav friends link
       for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1 && (node.matches('a[href*="friends"] div.foundation-web-badge span') || node.querySelector('a[href*="friends"] div.foundation-web-badge span'))) {
-          if (lastKnownFriendCount > 0) {
-            updateLeftNavFriendsCount(lastKnownFriendCount);
+        if (node.nodeType === 1) {
+          const element = node as Element;
+          const foundRelevantElement = FRIEND_COUNT_SELECTORS.some(selector => element.matches(selector) || element.querySelector(selector));
+          if (foundRelevantElement) {
+            if (lastKnownFriendCount > 0) {
+              updateLeftNavFriendsCount(lastKnownFriendCount);
+            }
+            break;
           }
-          break; // Found a relevant change, no need to check other added nodes for this mutation
         }
       }
     }
   });
 });
 
-async function fetchAndUpdateFriendRequests() {
+async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
-    const response = await sendMessageWithRetry({ action: "start" });
+    const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
 
-    const count = response.req;
+    const count: number | string = response.req;
     // Log the count
     console.log("Fetched friend request count:", count);
-    lastKnownFriendCount = count; // Update the global last known count
+    lastKnownFriendCount = typeof count === 'number' ? count : 0; // Update the global last known count
 
     if (typeof count === 'number' || typeof count === 'string') {
-      const notificationElements = document.getElementsByClassName("notification-blue notification");
-      let targetFriendSub = null;
+      const notificationElements: HTMLCollectionOf<Element> = document.getElementsByClassName("notification-blue notification");
+      let targetFriendSub: HTMLElement | null = null;
 
       if (notificationElements.length > 0) {
-        targetFriendSub = notificationElements[0];
-        targetFriendSub.innerHTML = count;
+        targetFriendSub = notificationElements[0] as HTMLElement;
+        targetFriendSub.innerHTML = String(count);
         targetFriendSub.setAttribute('id', 'friendSub');
       }
 
@@ -227,11 +262,11 @@ async function fetchAndUpdateFriendRequests() {
 
       if (checkURL()) {
         console.log("Current URL matches, attempting to update .friends-subtitle"); // Log URL check
-        waitForElm(".friends-subtitle").then((friendsSubtitle) => {
+        waitForElm(".friends-subtitle").then((friendsSubtitle: Element | null) => {
           // Look for a span element within friendsSubtitle that might contain the count
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
             // This is a common pattern for styled numbers.
-            let countElement = friendsSubtitle.querySelector('span[class*="count"], span[class*="number"], span[class*="badge"], span[class*="text-secondary"]');
+            let countElement = friendsSubtitle.querySelector<HTMLSpanElement>('span[class*="count"], span[class*="number"], span[class*="badge"], span[class*="text-secondary"]');
 
             if (countElement) {
               // If a suitable span is found, update its text content
@@ -240,8 +275,8 @@ async function fetchAndUpdateFriendRequests() {
             } else {
               // Fallback: If no specific span is found, try to replace the count using regex on innerHTML
               // This is riskier but attempts to preserve other HTML.
-              const currentInnerHTML = friendsSubtitle.innerHTML;
-              const newCountString = `(${count})`;
+              const currentInnerHTML: string = friendsSubtitle.innerHTML;
+              const newCountString: string = `(${count})`;
               const countRegex = /\(\d+\+?\)|\(\d+\)/; // Matches (500+), (836), (123)
 
               if (countRegex.test(currentInnerHTML)) {
@@ -269,7 +304,7 @@ async function fetchAndUpdateFriendRequests() {
         }
       }
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error in main execution logic:", err);
 
     // Check if the error is due to extension context invalidated or disconnection
@@ -283,7 +318,7 @@ async function fetchAndUpdateFriendRequests() {
         // Re-run the initial fetch and set the interval again
         // This will automatically try to re-establish the connection via connectToBackground()
         fetchAndUpdateFriendRequests();
-        updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000); // 2 seconds
+        updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000); // 1 seconds
       }, 5000); // Wait 5 seconds before attempting to restart
     }
   }
