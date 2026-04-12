@@ -228,11 +228,34 @@ async function fetchAndUpdateFriendRequests() {
       if (checkURL()) {
         console.log("Current URL matches, attempting to update .friends-subtitle"); // Log URL check
         waitForElm(".friends-subtitle").then((friendsSubtitle) => {
-          console.log("Found .friends-subtitle. Current innerHTML:", friendsSubtitle.innerHTML); // Log current innerHTML
+          // Look for a span element within friendsSubtitle that might contain the count
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
-            friendsSubtitle.innerHTML = `Friend Requests (${count})`;
+            // This is a common pattern for styled numbers.
+            let countElement = friendsSubtitle.querySelector('span[class*="count"], span[class*="number"], span[class*="badge"], span[class*="text-secondary"]');
+
+            if (countElement) {
+              // If a suitable span is found, update its text content
+              countElement.textContent = `(${count})`;
+              console.log("Updated .friends-subtitle count element to:", countElement.textContent);
+            } else {
+              // Fallback: If no specific span is found, try to replace the count using regex on innerHTML
+              // This is riskier but attempts to preserve other HTML.
+              const currentInnerHTML = friendsSubtitle.innerHTML;
+              const newCountString = `(${count})`;
+              const countRegex = /\(\d+\+?\)|\(\d+\)/; // Matches (500+), (836), (123)
+
+              if (countRegex.test(currentInnerHTML)) {
+                friendsSubtitle.innerHTML = currentInnerHTML.replace(countRegex, newCountString);
+                console.log("Updated .friends-subtitle via regex replacement:", friendsSubtitle.innerHTML);
+              } else {
+                // Last resort: If no count pattern found, append the new count in a span.
+                // This assumes "Friend Requests" is plain text of friendsSubtitle and we need to add the styled count.
+                friendsSubtitle.innerHTML = `${currentInnerHTML.trim()} <span class="text-secondary">${newCountString}</span>`; // Using a common Roblox class
+                console.log("Fallback: Appended new count in span to .friends-subtitle:", friendsSubtitle.innerHTML);
+              }
+            }
             friendsSubtitle.setAttribute('id', "friendsSubtitleRequests");
-            console.log("Updated .friends-subtitle to:", friendsSubtitle.innerHTML); // Log updated innerHTML
+            console.log("Final .friends-subtitle innerHTML after update:", friendsSubtitle.innerHTML);
           }
         });
       }
