@@ -6,7 +6,6 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
     "outDir": "./dist",
     "rootDir": "./src",
     "lib": ["DOM", "ES2020", "dom.iterable"],
