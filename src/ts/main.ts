@@ -27,6 +27,26 @@ const FRIEND_COUNT_SELECTORS = [
   'a[href*="friends"] .nav-menu-item-text + span'     // Another potential alternative (e.g., "Friends" text followed by count)
 ];
 
+// MutationObserver to watch for changes in the DOM and re-apply updates
+const observer = new MutationObserver((mutations: MutationRecord[]) => {
+  mutations.forEach((mutation) => {
+    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) {
+          const element = node as Element;
+          const foundRelevantElement = FRIEND_COUNT_SELECTORS.some(selector => element.matches(selector) || element.querySelector(selector));
+          if (foundRelevantElement) {
+            if (lastKnownFriendCount > 0) {
+              updateLeftNavFriendsCount(lastKnownFriendCount);
+            }
+            break;
+          }
+        }
+      }
+    }
+  });
+});
+
 // Function to check if the current URL matches the specified pattern
 function checkURL(): boolean {
   const url: string = window.location.href;
@@ -172,130 +192,66 @@ function updateLeftNavFriendsCount(count: number | string): void {
 
   for (const selector of FRIEND_COUNT_SELECTORS) {
     leftNavFriendsCount = document.querySelector<HTMLSpanElement>(selector);
-    if (leftNavFriendsCount) {
-      console.log(`Found friend count element with selector: ${selector}`);
-      break;
-    }
+    if (leftNavFriendsCount) break;
   }
 
   if (leftNavFriendsCount) {
-    if (leftNavFriendsCount.innerHTML !== String(count)) {
-      leftNavFriendsCount.innerHTML = String(count);
+    // Format the count if it's a number
+    const displayCount = typeof count === 'number' ? count.toLocaleString() : String(count);
+
+    if (leftNavFriendsCount.innerHTML !== displayCount) {
+      leftNavFriendsCount.innerHTML = displayCount;
       leftNavFriendsCount.setAttribute('id', 'friendSubLeftNav');
-      console.log("Updated left navigation Friends count to:", leftNavFriendsCount.innerHTML);
+      console.log("Updated left navigation Friends count to:", displayCount);
     }
-  }
-  else {
-    console.warn("Could not find the left navigation Friends count element with any of the provided selectors.");
   }
 }
-
-// MutationObserver to watch for changes in the DOM and re-apply updates
-const observer = new MutationObserver((mutations: MutationRecord[]) => {
-  mutations.forEach((mutation) => {
-    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1) {
-          const element = node as Element;
-          const foundRelevantElement = FRIEND_COUNT_SELECTORS.some(selector => element.matches(selector) || element.querySelector(selector));
-          if (foundRelevantElement) {
-            if (lastKnownFriendCount > 0) {
-              updateLeftNavFriendsCount(lastKnownFriendCount);
-            }
-            break;
-          }
-        }
-      }
-    }
-  });
-});
 
 async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
     const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
     const count: number | string = response.req;
-    
-    // Log the count
-    console.log("Fetched friend request count:", count);
-    lastKnownFriendCount = typeof count === 'number' ? count : 0; // Update the global last known count
+    lastKnownFriendCount = typeof count === 'number' ? count : 0;
 
     if (typeof count === 'number' || typeof count === 'string') {
-      const notificationElements: HTMLCollectionOf<Element> = document.getElementsByClassName("notification-blue notification");
-      let targetFriendSub: HTMLElement | null = null;
-
+      // Create the formatted string once
+      const formattedCount = typeof count === 'number' ? count.toLocaleString() : String(count);
+      const notificationElements = document.getElementsByClassName("notification-blue notification");
       if (notificationElements.length > 0) {
-        targetFriendSub = notificationElements[0] as HTMLElement;
-        targetFriendSub.innerHTML = String(count);
+        const targetFriendSub = notificationElements[0] as HTMLElement;
+        targetFriendSub.innerHTML = formattedCount; // Uses "1,000" instead of "1000"
         targetFriendSub.setAttribute('id', 'friendSub');
       }
 
-      // Call the new function to update the left navigation Friends count
       updateLeftNavFriendsCount(count);
 
       if (checkURL()) {
-        console.log("Current URL matches, attempting to update .friends-subtitle"); // Log URL check
         waitForElm(".friends-subtitle").then((friendsSubtitle: Element | null) => {
-          // Look for a span element within friendsSubtitle that might contain the count
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
-            // This is a common pattern for styled numbers.
-            let countElement: HTMLSpanElement | null = null;
+            // The formatted string for the subtitle (e.g., "(1,234)")
+            const newCountString = `(${formattedCount})`;
             
-            const selectors = [
-              'span[class*="count"]',
-              'span[class*="number"]',
-              'span[class*="badge"]',
-              'span[class*="text-secondary"]',
-            ];
-
-            for (const selector of selectors) {
-              countElement = friendsSubtitle.querySelector<HTMLSpanElement>(selector);
-              if (countElement) break;
-            }
+            let countElement = friendsSubtitle.querySelector<HTMLSpanElement>('span[class*="count"], span[class*="number"]');
 
             if (countElement) {
-              // If a suitable span is found, update its text content
-              countElement.textContent = `(${count})`;
-              console.log("Updated .friends-subtitle count element to:", countElement.textContent);
+              countElement.textContent = newCountString;
             } else {
-              // Fallback: If no specific span is found, try to replace the count using regex on innerHTML
-              // This is riskier but attempts to preserve other HTML.
-              const currentInnerHTML: string = friendsSubtitle.innerHTML;
-              const newCountString: string = `(${count})`;
-              const countRegex = /\(\d+\+?\)|\(\d+\)/; // Matches (500+), (836), (123)
+              // Regex fallback: now matches numbers with commas too
+              const countRegex = /\([\d,]+\+?\)|\([\d,]+\)/; 
+              const currentInnerHTML = friendsSubtitle.innerHTML;
 
               if (countRegex.test(currentInnerHTML)) {
                 friendsSubtitle.innerHTML = currentInnerHTML.replace(countRegex, newCountString);
-                console.log("Updated .friends-subtitle via regex replacement:", friendsSubtitle.innerHTML);
               } else {
-                // Last resort: If no count pattern found, append the new count in a span.
-                // This assumes "Friend Requests" is plain text of friendsSubtitle and we need to add the styled count.
-                friendsSubtitle.innerHTML = `${currentInnerHTML.trim()} <span class="text-secondary">${newCountString}</span>`; // Using a common Roblox class
-                console.log("Fallback: Appended new count in span to .friends-subtitle:", friendsSubtitle.innerHTML);
+                friendsSubtitle.innerHTML = `${currentInnerHTML.trim()} <span class="text-secondary">${newCountString}</span>`;
               }
             }
-            friendsSubtitle.setAttribute('id', "friendsSubtitleRequests");
-            console.log("Final .friends-subtitle innerHTML after update:", friendsSubtitle.innerHTML);
           }
         });
       }
-      
-      if (typeof count === 'number' && count < 500) {
-        displayPopupMessage();
-      } else if (typeof count === 'string' && count.startsWith("Error")) {
-        console.error("Failed to fetch friend requests:", count);
-        if (targetFriendSub) {
-          targetFriendSub.innerHTML = "Error";
-        }
-      }
     }
   } catch (err: any) {
-    console.error("Error in main execution logic:", err);
-
-    // Check if the error is due to extension context invalidated or disconnection
-    if (err && err.message && (err.message.includes("Extension context invalidated") || err.message.includes("disconnected") || err.message.includes("Failed to connect"))) {
-      console.error("Extension context invalidated, disconnected, or failed to connect. Attempting to restart updates...");
-      clearInterval(updateInterval); // Clear current interval
-    }
+      console.error("Error fetching friend requests:", err);
   }
 }
 

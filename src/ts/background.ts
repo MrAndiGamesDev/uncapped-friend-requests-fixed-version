@@ -74,7 +74,7 @@ async function fetchTotalFriendRequestCount(): Promise<number> {
  */
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== "friendRequestPort") return;
-  port.onMessage.addListener(async (message) => {
+  port.onMessage.addListener(async(message: any) => {
     if (message.action === "start") {
       try {
         const count = await fetchTotalFriendRequestCount();
@@ -92,9 +92,16 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
  */
 chrome.runtime.onMessage.addListener((request: any, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
   if (request.action === "start") {
-    fetchTotalFriendRequestCount()
-      .then(count => sendResponse({ req: count } as MessageResponse))
-      .catch(err => sendResponse({ req: `Error: ${err.message}` } as MessageResponse));
+    const fetchFriendRequestCount = async () => {
+      try {
+        const count = await fetchTotalFriendRequestCount();
+        sendResponse({ req: count } as MessageResponse);
+      } catch (error: any) {
+        console.error("Background fetch error:", error);
+        sendResponse({ req: `Error: ${error.message}` } as MessageResponse);
+      }
+    };
+    fetchFriendRequestCount();
     return true; 
   }
 });
