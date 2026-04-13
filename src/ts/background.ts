@@ -1,5 +1,5 @@
 interface FriendRequestData {
-  data: any[];
+  data: Record<string, any>[]; // Replaced 'any[]' with a slightly stricter type
   nextPageCursor: string | null;
 }
 
@@ -56,16 +56,17 @@ async function fetchTotalFriendRequestCount(): Promise<number> {
     const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
     
     // Call our new helper function
-    const data = await callRobloxAPI<FriendRequestData>(url);
+    const Requestdata = await callRobloxAPI<FriendRequestData>(url);
 
-    if (data.data && data.data.length > 0) {
-      totalRequests += data.data.length;
-      cursor = data.nextPageCursor || "";
+    if (Requestdata.data && Requestdata.data.length > 0) {
+      totalRequests += Requestdata.data.length;
+      cursor = Requestdata.nextPageCursor || "";
       hasNextPage = !!cursor;
     } else {
       hasNextPage = false;
     }
   }
+  
   return totalRequests;
 }
 
@@ -74,7 +75,7 @@ async function fetchTotalFriendRequestCount(): Promise<number> {
  */
 chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
   if (port.name !== "friendRequestPort") return;
-  port.onMessage.addListener(async(message: any) => {
+  port.onMessage.addListener(async(message: { action: string }) => {
     if (message.action === "start") {
       try {
         const count = await fetchTotalFriendRequestCount();
@@ -90,7 +91,7 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
 /**
  * Optional: Listener for one-time messages
  */
-chrome.runtime.onMessage.addListener((request: any, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
   if (request.action === "start") {
     const fetchFriendRequestCount = async () => {
       try {
@@ -102,6 +103,6 @@ chrome.runtime.onMessage.addListener((request: any, sender: chrome.runtime.Messa
       }
     };
     fetchFriendRequestCount();
-    return true; 
+    return true;
   }
 });

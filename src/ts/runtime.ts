@@ -2,22 +2,18 @@ interface ChromeStorageResult {
   doNotShowPopup?: boolean;
 }
 
-interface MessageRequest {
-  action: "start";
-}
-
 interface MessageResponse {
   req: number | string;
 }
 
-// Function to check if the popup should be shown
+interface MessageRequest {
+  action: "start";
+}
+
+// Validate The variables
 let doNotShowPopup: boolean = false;
-
-// Declare updateInterval in a higher scope
 let updateInterval: number;
-let lastKnownFriendCount: number = 0; // New: Store the last known friend count
-
-// Helper function to send message with retry logic
+let lastKnownFriendCount: number = 0;
 let backgroundPort: chrome.runtime.Port | undefined;
 
 // Global selectors for friend count elements
@@ -29,7 +25,7 @@ const FRIEND_COUNT_SELECTORS = [
 
 // MutationObserver to watch for changes in the DOM and re-apply updates
 const observer = new MutationObserver((mutations: MutationRecord[]) => {
-  mutations.forEach((mutation) => {
+  mutations.forEach((mutation: MutationRecord) => {
     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType === 1) {
@@ -48,14 +44,14 @@ const observer = new MutationObserver((mutations: MutationRecord[]) => {
 });
 
 // Function to check if the current URL matches the specified pattern
-function checkURL(): boolean {
+function checkCurrentURL(): boolean {
   const url: string = window.location.href;
   return url.startsWith("https://www.roblox.com/users/") && url.includes("friends#!/friend-requests");
 }
 
 // Helper to wait for an element to appear in the DOM
 function waitForElm(selector: string): Promise<Element | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve: (value: Element | null) => void) => {
     if (document.querySelector(selector)) {
       return resolve(document.querySelector(selector));
     }
@@ -76,7 +72,7 @@ function waitForElm(selector: string): Promise<Element | null> {
 
 // Function to check if the popup should be shown
 async function shouldShowPopup(): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise((resolve: (value: boolean) => void) => {
     chrome.storage.sync.get(['doNotShowPopup'], function(result: ChromeStorageResult) {
       doNotShowPopup = result.doNotShowPopup || false;
       resolve(!doNotShowPopup);
@@ -121,9 +117,8 @@ async function displayPopupMessage(): Promise<void> {
     const doNotShowAgainBtn = popupMessage.querySelector<HTMLButtonElement>("#doNotShowAgain");
     if (doNotShowAgainBtn) {
       doNotShowAgainBtn.addEventListener("click", () => {
-        popupMessage.remove(); // Remove the popup
-        // Store a flag in local storage to prevent showing the popup again
-        chrome.storage.sync.set({ 'doNotShowPopup': true });
+        popupMessage.remove();
+        chrome.storage.sync.set({ 'doNotShowPopup': true }); // Store a flag in local storage to prevent showing the popup again
       });
     }
   }
@@ -149,11 +144,11 @@ async function sendMessageWithRetry(message: MessageRequest, retries: number = 3
         throw new Error("Failed to connect to background script.");
       }
 
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve: (value: MessageResponse) => void, reject: (reason?: any) => void) => {
         const timeoutId = setTimeout(() => {
           reject(new Error("Message response timed out."));
           if (port) port.disconnect();
-        }, 10000); // 10 second timeout for response
+        }, 10 * 1000); // 10 second timeout for response
 
         const handler = function(response: MessageResponse) {
           clearTimeout(timeoutId);
@@ -176,7 +171,7 @@ async function sendMessageWithRetry(message: MessageRequest, retries: number = 3
         if (i < retries - 1) {
           await new Promise(res => setTimeout(res, delay));
         } else {
-          throw error; // Re-throw after last retry attempt
+          throw error;
         }
       } else {
         throw error;
@@ -209,6 +204,7 @@ function updateLeftNavFriendsCount(count: number | string): void {
 
 async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
+    const checkURL = checkCurrentURL();
     const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
     const count: number | string = response.req;
     lastKnownFriendCount = typeof count === 'number' ? count : 0;
@@ -225,12 +221,11 @@ async function fetchAndUpdateFriendRequests(): Promise<void> {
 
       updateLeftNavFriendsCount(count);
 
-      if (checkURL()) {
+      if (checkURL) {
         waitForElm(".friends-subtitle").then((friendsSubtitle: Element | null) => {
           if (friendsSubtitle && friendsSubtitle.innerHTML.includes("Requests")) {
             // The formatted string for the subtitle (e.g., "(1,234)")
             const newCountString = `(${formattedCount})`;
-            
             let countElement = friendsSubtitle.querySelector<HTMLSpanElement>('span[class*="count"], span[class*="number"]');
 
             if (countElement) {
@@ -251,20 +246,19 @@ async function fetchAndUpdateFriendRequests(): Promise<void> {
       }
     }
   } catch (err: any) {
-      console.error("Error fetching friend requests:", err);
+    console.error("Error fetching friend requests:", err);
   }
 }
 
 // Main execution logic
 (async () => {
   // Start observing the body for all changes
-  // We'll disconnect and reconnect this if needed, but for now, continuous observation.
   observer.observe(document.body, { childList: true, subtree: true });
   
   // Fetch immediately on load
   await fetchAndUpdateFriendRequests();
 
-  // Set up polling every 2 seconds
+  // Set up polling every 1 seconds
   updateInterval = setInterval(fetchAndUpdateFriendRequests, 1 * 1000);
 
   // Clear interval when page is unloaded
