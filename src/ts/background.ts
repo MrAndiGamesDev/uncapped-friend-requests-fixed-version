@@ -34,7 +34,7 @@ async function callRobloxAPI<T>(endpoint: string, method: string = "GET"): Promi
     headers: {
       "Cookie": rawCookie,
       "Content-Type": "application/json",
-    }
+    },
   });
 
   if (!response.ok) {
@@ -186,7 +186,6 @@ function injectRobloxModal() {
   };
 
   shadow.getElementById('close-btn')?.addEventListener('click', () => closeModal());
-  
   shadow.getElementById('open-friends-btn')?.addEventListener('click', () => {
     closeModal(() => {
       window.location.href = "https://www.roblox.com/users/friends#!/friend-requests";
@@ -243,8 +242,8 @@ chrome.runtime.onInstalled.addListener(async (details: chrome.runtime.InstalledD
       });
 
       // 2. Set up a listener to wait for the page to finish loading
-      chrome.tabs.onUpdated.addListener(function listener(tabId, info) {
-        if (tabId === tab.id && info.status === 'complete') {
+      chrome.tabs.onUpdated.addListener(function listener(tabId: number, info): void {
+        if (tabId === tab.id && info?.status === 'complete') {
           // Remove listener so it doesn't run again
           chrome.tabs.onUpdated.removeListener(listener);
           // 3. Inject the modal logic
@@ -255,7 +254,7 @@ chrome.runtime.onInstalled.addListener(async (details: chrome.runtime.InstalledD
         }
       });
     } catch {
-      chrome.tabs.create({ url: `https://www.roblox.com/login` });
+      await chrome.tabs.create({ url: `https://www.roblox.com/login` });
     }
   }
 });
