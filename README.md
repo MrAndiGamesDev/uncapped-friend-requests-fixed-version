@@ -12,7 +12,7 @@ Your privacy is important. This extension:
 
 ## 🛠️ Development Setup
 
-### Prerequisites
+### Preceeding
 Before you begin, ensure you have [Node.js](https://nodejs.org/) installed on your machine.
 
 ### 1. Install Dependencies
