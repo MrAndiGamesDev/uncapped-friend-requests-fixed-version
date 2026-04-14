@@ -1,5 +1,4 @@
 # 🚀 Uncapped Friend Requests (Roblox)
-
 A modified browser extension designed to fix specific issues with Roblox friend request limits. This project is a refactored version of the [original source code](https://github.com/andreyondemand/uncapped-friend-requests-roblox).
 
 ## 🛡️ Privacy & Data
