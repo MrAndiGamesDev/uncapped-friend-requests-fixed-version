@@ -72,49 +72,34 @@ async function fetchTotalFriendRequestCount(): Promise<number> {
 
 /**
  * Injects a branded onboarding modal for 'uncapped-friend-requests-roblox'
- * using the custom provided image.
+ * Features: Roblox-accurate pop-in, active click feedback, and exit animations.
  */
 function injectRobloxModal() {
   if (document.getElementById("uncapped-requests-modal")) return;
 
-  // Detect Roblox site theme
-  const isRobloxDark = document.body.classList.contains('dark-theme') || 
-                       document.documentElement.classList.contains('dark-theme');
-
+  const isRobloxDark = document.body.classList.contains('dark-theme') || document.documentElement.classList.contains('dark-theme');
   const modalContainer = document.createElement('div');
   modalContainer.id = "uncapped-requests-modal";
-  const shadow = modalContainer.attachShadow({mode: 'open'});
 
+  const shadow = modalContainer.attachShadow({ mode: 'open' });
   const imageUrl = chrome.runtime.getURL('src/imgs/icon-128.png');
 
   const html = `
-    <div class="overlay">
-      <div class="modal-card">
-        <div class="header">
-          Welcome to Uncapped Friend Requests!
-        </div>
-        
+    <div class="overlay" id="modal-overlay">
+      <div class="modal-card" id="modal-card">
+        <div class="header">Welcome to Uncapped Friend Requests!</div>
         <div class="content">
           <div class="icon-header">
-            <img class="brand-image" src="${imageUrl}" alt="Uncapped requests logo">
+            <img class="brand-image" src="${imageUrl}" alt="Logo">
           </div>
-
           <p class="main-text">
-            Thanks for installing <b class="highlight">Uncapped Friend Requests</b>!
-            Your standard Roblox friend request limit has now been lifted.
+            Thanks for installing <b class="highlight">Uncapped Friend Requests</b>!<br>
+            Your standard friend limit has now been lifted.
           </p>
-          
-          <p class="sub-text">
-            You are now free to send and receive thousands of friend requests! You can manage this feature on the Roblox friend requests page.
-          </p>
-          
-          <p class="footer-text">
-            If you enjoy the freedom, please consider leaving a review on the <b>Chrome Web Store</b>.
-          </p>
+          <p class="sub-text">You can manage this feature on your friend requests page.</p>
         </div>
-
         <div class="actions">
-          <button class="btn-secondary" id="open-friends-btn">Go to Friends Page</button>
+          <button class="btn-secondary" id="open-friends-btn">Go to Friends</button>
           <button class="btn-primary" id="close-btn">Okay</button>
         </div>
       </div>
@@ -122,68 +107,59 @@ function injectRobloxModal() {
 
     <style>
       :host {
-        /* --- DYNAMIC THEME VARIABLES --- */
         --bg-card: ${isRobloxDark ? '#232527' : '#ffffff'};
-        --bg-overlay: ${isRobloxDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(25, 25, 25, 0.5)'};
-        
-        /* Header Logic */
+        --bg-overlay: ${isRobloxDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(25, 25, 25, 0.6)'};
         --bg-header: ${isRobloxDark ? '#2b2d2f' : '#f2f4f5'};
         --text-header: ${isRobloxDark ? '#ffffff' : '#191b1d'};
-        
-        /* Text Logic */
         --text-main: ${isRobloxDark ? '#bdbebe' : '#393b3d'};
         --text-sub: ${isRobloxDark ? '#adb0b1' : '#656667'};
         --highlight-color: ${isRobloxDark ? '#ffffff' : '#000000'};
-        
-        /* Border Logic */
         --border-color: ${isRobloxDark ? '#393b3d' : '#dee1e3'};
-        
-        /* Button Logic */
         --btn-primary-bg: rgb(51, 95, 255);
-        --btn-primary-text: #ffffff;
         --btn-secondary-bg: ${isRobloxDark ? '#393b3d' : '#e3e5e7'};
-        --btn-secondary-text: ${isRobloxDark ? '#ffffff' : '#393b3d'};
+      }
+
+      /* --- Animations --- */
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+      
+      @keyframes popIn { 
+        from { opacity: 0; transform: scale(0.8); } 
+        to { opacity: 1; transform: scale(1); } 
+      }
+      @keyframes popOut { 
+        from { opacity: 1; transform: scale(1); } 
+        to { opacity: 0; transform: scale(0.8); } 
       }
 
       .overlay {
         position: fixed; inset: 0; background: var(--bg-overlay);
         display: flex; align-items: center; justify-content: center;
-        z-index: 2147483647; font-family: 'HCo Gotham SSm', "Helvetica Neue", Helvetica, Arial, sans-serif;
+        z-index: 2147483647; font-family: 'HCo Gotham SSm', Arial, sans-serif;
+        animation: fadeIn 0.2s ease-out forwards;
       }
-      .modal-card {
-        background: var(--bg-card); color: var(--text-main); width: 440px; border-radius: 8px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3); overflow: hidden; border: 1px solid var(--border-color);
-      }
-      .header {
-        padding: 18px; text-align: center; font-size: 18px; font-weight: 700;
-        border-bottom: 1px solid var(--border-color); 
-        background: var(--bg-header); 
-        color: var(--text-header); 
-      }
-      
-      .content { padding: 25px 35px; text-align: center; }
-      .icon-header { margin-bottom: 20px; display: flex; justify-content: center; }
-      .brand-image { width: 90px; height: 90px; border-radius: 12px; }
 
-      .main-text { font-size: 15px; color: var(--text-main); margin: 0 0 12px; line-height: 1.5; }
-      .highlight { color: var(--highlight-color); font-weight: 700; }
-      .sub-text { font-size: 13px; color: var(--text-sub); margin: 0 0 20px; line-height: 1.5; }
-      .footer-text { font-size: 12px; color: var(--text-sub); margin: 15px 0 0; }
-      
-      .actions { padding: 10px 25px 25px; display: flex; gap: 12px; background: var(--bg-card); }
-      
-      button {
-        flex: 1; padding: 10px; border-radius: 4px; border: none; 
-        font-weight: 600; cursor: pointer; font-size: 14px; transition: 0.1s;
+      .modal-card {
+        background: var(--bg-card); color: var(--text-main); width: 400px; border-radius: 8px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4); overflow: hidden; border: 1px solid var(--border-color);
+        animation: popIn 0.3s cubic-bezier(0.3, 0.5, 0, 1.15) forwards;
       }
-      .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
-      .btn-primary:hover { background: #4477ff; }
-      
-      .btn-secondary { 
-        background: var(--btn-secondary-bg); 
-        color: var(--btn-secondary-text); 
-        border: 1px solid var(--border-color); 
-      }
+
+      /* Exit Classes - Triggered by JS */
+      .overlay.closing { animation: fadeOut 0.15s ease-in forwards; }
+      .modal-card.closing { animation: popOut 0.15s ease-in forwards; }
+
+      /* --- Buttons & Rest of Style --- */
+      .header { padding: 15px; text-align: center; font-size: 16px; font-weight: 700; background: var(--bg-header); color: var(--text-header); border-bottom: 1px solid var(--border-color); }
+      .content { padding: 25px; text-align: center; }
+      .brand-image { width: 80px; height: 80px; margin-bottom: 15px; border-radius: 12px; }
+      .main-text { font-size: 15px; margin-bottom: 10px; line-height: 1.4; }
+      .sub-text { font-size: 13px; color: var(--text-sub); }
+      .actions { padding: 0 25px 25px; display: flex; gap: 10px; }
+      button { flex: 1; padding: 10px; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; font-size: 14px; transition: transform 0.1s ease, background 0.1s ease; user-select: none; }
+      button:active { transform: scale(0.95); }
+      .btn-primary { background: var(--btn-primary-bg); color: #fff; }
+      .btn-secondary { background: var(--btn-secondary-bg); color: var(--text-header); border: 1px solid var(--border-color); }
       .btn-secondary:hover { opacity: 0.8; }
     </style>
   `;
@@ -191,10 +167,30 @@ function injectRobloxModal() {
   shadow.innerHTML = html;
   document.body.appendChild(modalContainer);
 
-  shadow.getElementById('close-btn')?.addEventListener('click', () => modalContainer.remove());
+  const card = shadow.getElementById('modal-card');
+  const overlay = shadow.getElementById('modal-overlay');
+
+  /**
+   * Refactored Close Logic
+   */
+  const closeModal = (callback?: () => void) => {
+    // 1. Add closing classes to trigger keyframes
+    card?.classList.add('closing');
+    overlay?.classList.add('closing');
+
+    // 2. Wait for animation to finish (150ms) before removing from DOM
+    setTimeout(() => {
+      modalContainer.remove();
+      if (typeof callback === 'function') callback();
+    }, 150);
+  };
+
+  shadow.getElementById('close-btn')?.addEventListener('click', () => closeModal());
+  
   shadow.getElementById('open-friends-btn')?.addEventListener('click', () => {
-    window.location.href = "https://www.roblox.com/users/friends#!/friend-requests";
-    modalContainer.remove();
+    closeModal(() => {
+      window.location.href = "https://www.roblox.com/users/friends#!/friend-requests";
+    });
   });
 }
 
