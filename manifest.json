@@ -9,7 +9,7 @@
     "48": "src/imgs/icon-48.png",
     "128": "src/imgs/icon-128.png"
   },
-  "permissions": ["cookies"],
+  "permissions": ["cookies", "tabs", "scripting"],
   "host_permissions": ["*://*.roblox.com/*"],
   "content_scripts": [
     {
@@ -20,5 +20,11 @@
   "background": {
     "service_worker": "dist/ts/background.js",
     "type": "module"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/imgs/icon-128.png"],
+      "matches": ["*://*.roblox.com/*"]
+    }
+  ]
 }
