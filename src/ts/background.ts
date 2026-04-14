@@ -56,11 +56,11 @@ async function fetchTotalFriendRequestCount(): Promise<number> {
     const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
     
     // Call our new helper function
-    const Requestdata = await callRobloxAPI<FriendRequestData>(url);
+    const RequestData = await callRobloxAPI<FriendRequestData>(url);
 
-    if (Requestdata.data && Requestdata.data.length > 0) {
-      totalRequests += Requestdata.data.length;
-      cursor = Requestdata.nextPageCursor || "";
+    if (RequestData.data && RequestData.data.length > 0) {
+      totalRequests += RequestData.data.length;
+      cursor = RequestData.nextPageCursor || "";
       hasNextPage = !!cursor;
     } else {
       hasNextPage = false;
@@ -91,9 +91,8 @@ chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
 /**
  * Optional: Listener for one-time messages
  */
-chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+chrome.runtime.onMessage.addListener(async(request: { action: string }, _sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
   if (request.action === "start") {
-    const fetchFriendRequestCount = async () => {
       try {
         const count = await fetchTotalFriendRequestCount();
         sendResponse({ req: count } as MessageResponse);
@@ -102,7 +101,23 @@ chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrom
         sendResponse({ req: `Error: ${error.message}` } as MessageResponse);
       }
     };
-    fetchFriendRequestCount();
     return true;
+  }
+);
+
+/**
+ * Installation Logic
+ */
+chrome.runtime.onInstalled.addListener(async(details: chrome.runtime.InstalledDetails) => {
+  if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
+    try {
+      // Check login status before deciding where to send them
+      await getRobloxCookie(); 
+      chrome.tabs.create({ url: "https://www.roblox.com/users/friends#!/friend-requests" });
+    } catch {
+      // Not logged in? Send to login with a return redirect
+      const returnUrl = encodeURIComponent("/users/friends#!/friend-requests");
+      chrome.tabs.create({ url: `https://www.roblox.com/login?ReturnUrl=${returnUrl}` });
+    }
   }
 });
