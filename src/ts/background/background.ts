@@ -12,13 +12,14 @@ interface MessageResponse {
  */
 async function getRobloxCookie(): Promise<string> {
   const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
-  
-  if (!cookies || cookies.length === 0) {
+  const isAuthenticated = cookies.some((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
+
+  if (!isAuthenticated) {
     throw new Error("No Roblox cookies found. Please log in.");
   }
 
   // Efficiently join cookie names and values
-  return cookies.map(c => `${c.name}=${c.value}`).join('; ');
+  return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
 }
 
 /**
@@ -79,7 +80,6 @@ function injectRobloxModal() {
 
   const isRobloxDark = document.body.classList.contains('dark-theme') || document.documentElement.classList.contains('dark-theme');
   const modalContainer = document.createElement('div');
-  modalContainer.id = "uncapped-requests-modal";
 
   const shadow = modalContainer.attachShadow({ mode: 'open' });
   const imageUrl = chrome.runtime.getURL('src/imgs/icon-128.png');
@@ -164,6 +164,7 @@ function injectRobloxModal() {
     </style>
   `;
 
+  modalContainer.id = "uncapped-requests-modal";
   shadow.innerHTML = html;
   document.body.appendChild(modalContainer);
 
@@ -173,7 +174,7 @@ function injectRobloxModal() {
   /**
    * Refactored Close Logic
    */
-  const closeModal = (callback?: () => void) => {
+  const closeModal = (callBack?: () => void) => {
     // 1. Add closing classes to trigger keyframes
     card?.classList.add('closing');
     overlay?.classList.add('closing');
@@ -181,7 +182,7 @@ function injectRobloxModal() {
     // 2. Wait for animation to finish (150ms) before removing from DOM
     setTimeout(() => {
       modalContainer.remove();
-      if (typeof callback === 'function') callback();
+      if (typeof callBack === 'function') callBack();
     }, 150);
   };
 
@@ -231,7 +232,7 @@ chrome.runtime.onMessage.addListener(async(request: { action: string }, _sender:
 /**
  * Installation Logic
  */
-chrome.runtime.onInstalled.addListener(async (details: chrome.runtime.InstalledDetails) => {
+chrome.runtime.onInstalled.addListener(async(details: chrome.runtime.InstalledDetails) => {
   if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
     try {
       await getRobloxCookie();
@@ -242,7 +243,7 @@ chrome.runtime.onInstalled.addListener(async (details: chrome.runtime.InstalledD
       });
 
       // 2. Set up a listener to wait for the page to finish loading
-      chrome.tabs.onUpdated.addListener(function listener(tabId: number, info): void {
+      chrome.tabs.onUpdated.addListener(function listener(tabId: number, info: any): void {
         if (tabId === tab.id && info?.status === 'complete') {
           // Remove listener so it doesn't run again
           chrome.tabs.onUpdated.removeListener(listener);
