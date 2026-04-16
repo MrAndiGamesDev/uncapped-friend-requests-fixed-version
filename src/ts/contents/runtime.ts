@@ -12,8 +12,10 @@ interface MessageRequest {
 
 // Validate The variables
 let doNotShowPopup: boolean = false;
-let updateInterval: number;
 let lastKnownFriendCount: number = 0;
+
+// Global interval for updating friend count
+let updateInterval: number;
 let backgroundPort: chrome.runtime.Port | undefined;
 
 // Global selectors for friend count elements
@@ -147,7 +149,7 @@ function updateLeftNavFriendsCount(count: number | string): void {
 
 async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
-    const checkURL = checkCurrentURL();
+    const checkURL: boolean = checkCurrentURL();
     const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
     const count: number | string = response.req;
     lastKnownFriendCount = typeof count === 'number' ? count : 0;
