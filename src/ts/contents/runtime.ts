@@ -12,8 +12,10 @@ interface MessageRequest {
 
 // Validate The variables
 let doNotShowPopup: boolean = false;
-let updateInterval: number;
 let lastKnownFriendCount: number = 0;
+
+// Global interval for updating friend count
+let updateInterval: number;
 let backgroundPort: chrome.runtime.Port | undefined;
 
 // Global selectors for friend count elements
@@ -70,64 +72,7 @@ function waitForElm(selector: string): Promise<Element | null> {
   });
 }
 
-// Function to check if the popup should be shown
-async function shouldShowPopup(): Promise<boolean> {
-  return new Promise((resolve: (value: boolean) => void) => {
-    chrome.storage.sync.get(['doNotShowPopup'], function(result: ChromeStorageResult) {
-      doNotShowPopup = result.doNotShowPopup || false;
-      resolve(!doNotShowPopup);
-    });
-  });
-}
-
-// Function to display the popup message
-async function displayPopupMessage(): Promise<void> {
-  // Display a popup message on the site
-  const showPopup: boolean = await shouldShowPopup();
-  if (showPopup) {
-    const popupMessage: HTMLDivElement = document.createElement("div");
-    popupMessage.innerHTML = `
-      <div style="font-weight: bold; font-size: 1.1em; margin-bottom: 10px;">Uncapped Friend Requests</div>
-      <div style="margin-bottom: 5px;">You have less than 500 friend requests.</div>
-      <div style="margin-bottom: 15px;">The Uncapped Roblox Friend Requests extension is unnecessary.</div>
-      <button id="doNotShowAgain" style="background-color: #007bff; color: #ffffff; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 14px; margin-top: 15px; transition: background-color 0.2s ease;">Do Not Show Again</button>
-      <div style="font-size: 0.9em; color: #777; margin-top: 10px;">Closing in 15 seconds...</div>
-    `;
-    popupMessage.style.position = "fixed";
-    popupMessage.style.top = "50%";
-    popupMessage.style.left = "50%";
-    popupMessage.style.transform = "translate(-50%, -50%)";
-    popupMessage.style.backgroundColor = "#ffffff";
-    popupMessage.style.padding = "25px";
-    popupMessage.style.borderRadius = "8px";
-    popupMessage.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
-    popupMessage.style.zIndex = "10000";
-    popupMessage.style.fontFamily = "'Arial', sans-serif";
-    popupMessage.style.color = "#333333";
-    popupMessage.style.textAlign = "center";
-    popupMessage.style.maxWidth = "350px";
-    popupMessage.style.lineHeight = "1.5";
-    document.body.appendChild(popupMessage);
-
-    // Remove the popup after 15 seconds
-    setTimeout(() => {
-      popupMessage.remove();
-    }, 15 * 1000);
-
-    const doNotShowAgainBtn = popupMessage.querySelector<HTMLButtonElement>("#doNotShowAgain");
-    if (doNotShowAgainBtn) {
-      doNotShowAgainBtn.addEventListener("click", () => {
-        popupMessage.remove();
-        chrome.storage.sync.set({ 'doNotShowPopup': true }); // Store a flag in local storage to prevent showing the popup again
-      });
-    }
-  }
-}
-
 function connectToBackground(): chrome.runtime.Port {
-  if (backgroundPort) {
-    return backgroundPort;
-  }
   backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
   backgroundPort.onDisconnect.addListener(() => {
     console.warn("Background script disconnected. Attempting to reconnect on next update.");
@@ -204,7 +149,7 @@ function updateLeftNavFriendsCount(count: number | string): void {
 
 async function fetchAndUpdateFriendRequests(): Promise<void> {
   try {
-    const checkURL = checkCurrentURL();
+    const checkURL: boolean = checkCurrentURL();
     const response: MessageResponse = await sendMessageWithRetry({ action: "start" });
     const count: number | string = response.req;
     lastKnownFriendCount = typeof count === 'number' ? count : 0;
@@ -251,7 +196,7 @@ async function fetchAndUpdateFriendRequests(): Promise<void> {
 }
 
 // Main execution logic
-(async () => {
+(async() => {
   // Start observing the body for all changes
   observer.observe(document.body, { childList: true, subtree: true });
   
