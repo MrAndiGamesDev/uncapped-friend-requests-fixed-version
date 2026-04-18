@@ -6,23 +6,33 @@ interface MessageRequest {
   action: "start";
 }
 
-/**
- * Constants & Configuration
- */
-const FRIEND_COUNT_SELECTORS = [
-    'a[href*="friends"] div.foundation-web-badge span',
-    'a[href*="friends"] span.friend-count',
-    'a[href*="friends"] .nav-menu-item-text + span'
-];
+interface FriendCountSelectors {
+  targetSelectors: string[];
+}
 
 /**
- * Handles all UI-related DOM manipulations
+ * Holds the selectors used to target friend count elements in the DOM
+ */
+class GetFriendCountSelectors {
+    public static readonly targetSelectors: FriendCountSelectors["targetSelectors"] = [
+        'a[href*="friends"] div.foundation-web-badge span',
+        'a[href*="friends"] span.friend-count',
+        'a[href*="friends"] .nav-menu-item-text + span'
+    ];
+
+    public static getSelectors(): FriendCountSelectors["targetSelectors"] {
+        return this.targetSelectors;
+    }
+}
+
+/**
+ * Handles all UI-related DOM manipulations, such as updating friend counts
  */
 class DOMUtility {
     public static updateLeftNavFriendsCount(count: number | string): void {
         const displayCount = typeof count === 'number' ? count.toLocaleString() : String(count);
-        for (const selector of FRIEND_COUNT_SELECTORS) {
-            const element = document.querySelector<HTMLSpanElement>(selector);
+        for (const selector of GetFriendCountSelectors.getSelectors()) {
+            const element: HTMLSpanElement | null = document.querySelector<HTMLSpanElement>(selector);
             if (element && element.innerHTML !== displayCount) {
                 element.innerHTML = displayCount;
                 element.setAttribute('id', 'friendSubLeftNav');
@@ -33,10 +43,10 @@ class DOMUtility {
 
     public static waitForElm(selector: string): Promise<Element | null> {
         return new Promise((resolve: (value: Element | null | PromiseLike<Element | null>) => void) => {
-            const existing = document.querySelector(selector);
+            const existing: Element | null = document.querySelector(selector);
             if (existing) return resolve(existing);
-            const observer = new MutationObserver(() => {
-                const element = document.querySelector(selector);
+            const observer: MutationObserver = new MutationObserver(() => {
+                const element: HTMLSpanElement | null = document.querySelector(selector);
                 if (element) {
                     resolve(element);
                     observer.disconnect();
@@ -48,7 +58,7 @@ class DOMUtility {
 }
 
 /**
- * Manages the connection and communication with the Extension Background
+ * Manages the connection and communication with the Extension Background Script
  */
 class ExtensionMessenger {
     private static backgroundPort: chrome.runtime.Port | null = null;
@@ -65,9 +75,9 @@ class ExtensionMessenger {
     public static async sendMessageWithRetry(message: MessageRequest, retries: number = 3, delay: number = 1000): Promise<MessageResponse> {
         for (let i = 0; i < retries; i++) {
             try {
-                const port = this.connect();
+                const port: chrome.runtime.Port = this.connect();
                 return await new Promise<MessageResponse>((resolve: (value: MessageResponse | PromiseLike<MessageResponse>) => void, reject: (reason?: any) => void) => {
-                    const timeoutId = setTimeout(() => reject(new Error("Timeout")), 10000);
+                    const timeoutId: number = setTimeout(() => reject(new Error("Timeout")), 10000);
                     const handler = (response: MessageResponse) => {
                         clearTimeout(timeoutId);
                         port.onMessage.removeListener(handler);
@@ -86,17 +96,17 @@ class ExtensionMessenger {
 }
 
 /**
- * Handles URL pattern matching
+ * Handles URL pattern matching to determine if the current page is a friend requests page
  */
 class URLUtility {
     public static isFriendRequestPage(): boolean {
-        const url = window.location.href;
+        const url: string = window.location.href;
         return url.startsWith("https://www.roblox.com/users/") && url.includes("friends#!/friend-requests");
     }
 }
 
 /**
- * Monitors the DOM for new elements to apply updates automatically
+ * Monitors the DOM for new elements to apply updates automatically when friend counts change
  */
 class FriendCountObserver {
     private static observer: MutationObserver | null = null;
@@ -107,7 +117,8 @@ class FriendCountObserver {
         if (this.observer) return;
         this.observer = new MutationObserver((mutations: MutationRecord[]) => {
             for (const mutation of mutations) {
-                const hasAddedNodes = Array.from(mutation.addedNodes).some(node => node.nodeType === 1 && FRIEND_COUNT_SELECTORS.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
+                const selectors: string[] = GetFriendCountSelectors.getSelectors();
+                const hasAddedNodes: boolean = Array.from(mutation.addedNodes).some(node => node.nodeType === 1 && selectors.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
                 if (hasAddedNodes && this.lastCount > 0) {
                     DOMUtility.updateLeftNavFriendsCount(this.lastCount);
                     break;
@@ -123,7 +134,7 @@ class FriendCountObserver {
 }
 
 /**
- * Orchestrator for the entire script logic
+ * Orchestrator for the entire script logic, including initial setup, periodic updates, and cleanup
  */
 class AppController {
     private static updateInterval: number | null = null;
@@ -138,9 +149,9 @@ class AppController {
 
     private static async refresh() {
         try {
-            const response = await ExtensionMessenger.sendMessageWithRetry({ action: "start" });
-            const count = response.req;
-            const numCount = typeof count === 'number' ? count : parseInt(String(count)) || 0;
+            const response: MessageResponse = await ExtensionMessenger.sendMessageWithRetry({ action: "start" });
+            const count: number | string = response.req;
+            const numCount: number = typeof count === 'number' ? count : parseInt(String(count)) || 0;
             FriendCountObserver.init(numCount);
             FriendCountObserver.updateLastCount(numCount);
             this.updateUI(count);
@@ -150,17 +161,20 @@ class AppController {
     }
 
     private static updateUI(count: number | string) {
-        const formatted = typeof count === 'number' ? count.toLocaleString() : String(count);
+        const formatted: string = typeof count === 'number' ? count.toLocaleString() : String(count);
         
         // 1. Update Notification Badges
-        const badges = document.getElementsByClassName("notification-blue notification");
-        const element = badges[0] as HTMLElement;
-        if (badges && badges.length > 0) {
-            element.innerHTML = formatted;
-            element.setAttribute('id', 'friendSub');
-        }
+        const badges: HTMLCollectionOf<Element> = document.getElementsByClassName("notification-blue notification");
+        const element: HTMLElement | null = badges[0] as HTMLElement;
 
-        // 2. Update Left Nav
+        if (badges && badges.length > 0) {
+            if (element) {
+                element.innerHTML = formatted;
+                element.setAttribute('id', 'friendSub');
+            }
+        }
+        
+        // 2. Update Left Nav Friends Count
         DOMUtility.updateLeftNavFriendsCount(count);
 
         // 3. Update Subtitle if on the right page
@@ -174,12 +188,12 @@ class AppController {
     }
 
     private static updateSubtitle(container: Element, formattedCount: string) {
-        const display = `(${formattedCount})`;
-        const countSpan = container.querySelector('span[class*="count"], span[class*="number"]');
+        const display: string = `(${formattedCount})`;
+        const countSpan: HTMLElement | null = container.querySelector('span[class*="count"], span[class*="number"]');
         if (countSpan) {
             countSpan.textContent = display;
         } else {
-            const regex = /\([\d,]+\+?\)|\([\d,]+\)/;
+            const regex: RegExp = /\([\d,]+\+?\)|\([\d,]+\)/;
             if (regex.test(container.innerHTML)) {
                 container.innerHTML = container.innerHTML.replace(regex, display);
             } else {

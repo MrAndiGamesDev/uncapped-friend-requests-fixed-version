@@ -83,7 +83,6 @@ class EventListeners {
             const cookie = await RobloxAPIService.getRobloxCookie(storeId);
             port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) } as MessageResponse);
           } catch (error: any) {
-            console.error("Background fetch error:", error);
             port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
           }
         }
