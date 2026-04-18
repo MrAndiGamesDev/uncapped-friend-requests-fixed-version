@@ -1,7 +1,3 @@
-interface ChromeStorageResult {
-  doNotShowPopup?: boolean;
-}
-
 interface MessageResponse {
   req: number | string;
 }
@@ -25,7 +21,6 @@ const FRIEND_COUNT_SELECTORS = [
 class DOMUtility {
     public static updateLeftNavFriendsCount(count: number | string): void {
         const displayCount = typeof count === 'number' ? count.toLocaleString() : String(count);
-        
         for (const selector of FRIEND_COUNT_SELECTORS) {
             const element = document.querySelector<HTMLSpanElement>(selector);
             if (element && element.innerHTML !== displayCount) {
@@ -38,10 +33,9 @@ class DOMUtility {
     }
 
     public static waitForElm(selector: string): Promise<Element | null> {
-        return new Promise((resolve) => {
+        return new Promise((resolve: (value: Element | null | PromiseLike<Element | null>) => void) => {
             const existing = document.querySelector(selector);
             if (existing) return resolve(existing);
-
             const observer = new MutationObserver(() => {
                 const element = document.querySelector(selector);
                 if (element) {
@@ -49,7 +43,6 @@ class DOMUtility {
                     observer.disconnect();
                 }
             });
-
             observer.observe(document.body, { childList: true, subtree: true });
         });
     }
@@ -63,7 +56,6 @@ class ExtensionMessenger {
 
     private static connect(): chrome.runtime.Port {
         if (this.backgroundPort) return this.backgroundPort;
-
         this.backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
         this.backgroundPort.onDisconnect.addListener(() => {
             console.warn("Background script disconnected.");
@@ -72,25 +64,23 @@ class ExtensionMessenger {
         return this.backgroundPort;
     }
 
-    public static async sendMessageWithRetry(message: MessageRequest, retries = 3, delay = 1000): Promise<MessageResponse> {
+    public static async sendMessageWithRetry(message: MessageRequest, retries: number = 3, delay: number = 1000): Promise<MessageResponse> {
         for (let i = 0; i < retries; i++) {
             try {
                 const port = this.connect();
-                return await new Promise((resolve, reject) => {
+                return await new Promise<MessageResponse>((resolve: (value: MessageResponse | PromiseLike<MessageResponse>) => void, reject: (reason?: any) => void) => {
                     const timeoutId = setTimeout(() => reject(new Error("Timeout")), 10000);
-                    
                     const handler = (response: MessageResponse) => {
                         clearTimeout(timeoutId);
                         port.onMessage.removeListener(handler);
                         resolve(response);
                     };
-                    
                     port.onMessage.addListener(handler);
                     port.postMessage(message);
                 });
             } catch (error: any) {
                 if (i === retries - 1) throw error;
-                await new Promise(res => setTimeout(res, delay));
+                await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, delay));
             }
         }
         throw new Error("Communication failed.");
@@ -117,21 +107,15 @@ class FriendCountObserver {
     public static init(initialCount: number) {
         this.lastCount = initialCount;
         if (this.observer) return;
-
-        this.observer = new MutationObserver((mutations) => {
+        this.observer = new MutationObserver((mutations: MutationRecord[]) => {
             for (const mutation of mutations) {
-                const hasAddedNodes = Array.from(mutation.addedNodes).some(node => 
-                    node.nodeType === 1 && 
-                    FRIEND_COUNT_SELECTORS.some(s => (node as Element).matches(s) || (node as Element).querySelector(s))
-                );
-
+                const hasAddedNodes = Array.from(mutation.addedNodes).some(node => node.nodeType === 1 && FRIEND_COUNT_SELECTORS.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
                 if (hasAddedNodes && this.lastCount > 0) {
                     DOMUtility.updateLeftNavFriendsCount(this.lastCount);
                     break;
                 }
             }
         });
-
         this.observer.observe(document.body, { childList: true, subtree: true });
     }
 
@@ -149,7 +133,6 @@ class AppController {
     public static async start() {
         await this.refresh();
         this.updateInterval = window.setInterval(() => this.refresh(), 1000);
-
         window.addEventListener("beforeunload", () => {
             if (this.updateInterval) clearInterval(this.updateInterval);
         });
@@ -160,10 +143,8 @@ class AppController {
             const response = await ExtensionMessenger.sendMessageWithRetry({ action: "start" });
             const count = response.req;
             const numCount = typeof count === 'number' ? count : parseInt(String(count)) || 0;
-
             FriendCountObserver.init(numCount);
             FriendCountObserver.updateLastCount(numCount);
-
             this.updateUI(count);
         } catch (err) {
             console.error("Refresh failed:", err);
@@ -175,9 +156,10 @@ class AppController {
         
         // 1. Update Notification Badges
         const badges = document.getElementsByClassName("notification-blue notification");
-        if (badges.length > 0) {
-            (badges[0] as HTMLElement).innerHTML = formatted;
-            badges[0].setAttribute('id', 'friendSub');
+        const element = badges[0] as HTMLElement;
+        if (badges && badges.length > 0) {
+            element.innerHTML = formatted;
+            element.setAttribute('id', 'friendSub');
         }
 
         // 2. Update Left Nav
@@ -185,7 +167,7 @@ class AppController {
 
         // 3. Update Subtitle if on the right page
         if (URLUtility.isFriendRequestPage()) {
-            DOMUtility.waitForElm(".friends-subtitle").then(elm => {
+            DOMUtility.waitForElm(".friends-subtitle").then((elm: Element | null) => {
                 if (elm && elm.innerHTML.includes("Requests")) {
                     this.updateSubtitle(elm, formatted);
                 }
@@ -196,7 +178,6 @@ class AppController {
     private static updateSubtitle(container: Element, formattedCount: string) {
         const display = `(${formattedCount})`;
         const countSpan = container.querySelector('span[class*="count"], span[class*="number"]');
-        
         if (countSpan) {
             countSpan.textContent = display;
         } else {
@@ -204,7 +185,7 @@ class AppController {
             if (regex.test(container.innerHTML)) {
                 container.innerHTML = container.innerHTML.replace(regex, display);
             } else {
-                container.innerHTML += ` <span class="text-secondary">${display}</span>`;
+                container.innerHTML += `<span class="text-secondary">${display}</span>`;
             }
         }
     }
