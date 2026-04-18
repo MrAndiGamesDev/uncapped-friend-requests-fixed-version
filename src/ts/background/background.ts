@@ -7,17 +7,24 @@ interface MessageResponse {
   req: number | string;
 }
 
+interface ChromeTabWithStore extends chrome.tabs.Tab {
+  cookieStoreId?: string;
+}
+
 class RobloxAPIService {
   /**
    * Retrieves the Roblox cookie string from the browser storage.
    */
-  public static async getRobloxCookie(): Promise<string> {
-    const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
-    const isAuthenticated = cookies.some((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
-    if (!isAuthenticated) {
-      throw new Error("No Roblox cookies found. Please log in.");
+  public static async getRobloxCookie(cookieStoreId?: string): Promise<string> {
+    const query: chrome.cookies.GetAllDetails = { domain: "roblox.com" };
+    if (cookieStoreId) {
+      query.storeId = cookieStoreId;
     }
-    // Efficiently join cookie names and values
+    const cookies = await chrome.cookies.getAll(query);
+    const robloxSecurity = cookies.find((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
+    if (!robloxSecurity) {
+      throw new Error("No Roblox session found in this context.");
+    }
     return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
   }
 
@@ -26,39 +33,35 @@ class RobloxAPIService {
    * @param endpoint The full URL or path for the API
    * @param method GET, POST, etc.
    */
-  public static async callRobloxAPI<T>(endpoint: string, method: string = "GET"): Promise<T> {
-    const rawCookie = await this.getRobloxCookie();
+  public static async callRobloxAPI<T>(endpoint: string, cookie: string, method: string = "GET"): Promise<T> {
     const response = await fetch(endpoint, {
       method,
-      headers: {
-        "Cookie": rawCookie,
-        "Content-Type": "application/json",
-      },
+      headers: { "Cookie": cookie, "Content-Type": "application/json" },
     });
-    if (!response.ok) {
-      throw new Error(`Roblox API (${method}) failed: ${response.status} ${response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`Roblox API (${method}) failed: ${response.status}`);
     return await response.json() as T;
   }
 
   /**
    * Updated fetch logic using the generalized API helper
    */
-  public static async fetchTotalFriendRequestCount(): Promise<number> {
+  public static async fetchTotalFriendRequestCount(cookie: string): Promise<number> {
     let totalRequests = 0;
     let cursor = "";
-    let hasNextPage = true;
     do {
       const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-      const RequestData = await this.callRobloxAPI<FriendRequestData>(url);
-      if (RequestData.data && RequestData.data.length > 0) {
-        totalRequests += RequestData.data.length;
-        cursor = RequestData.nextPageCursor || "";
-        hasNextPage = !!cursor;
-      } else {
-        hasNextPage = false;
+      const friendRequestData = await this.callRobloxAPI<FriendRequestData>(url, cookie);
+      if (!friendRequestData || !friendRequestData.data) {
+        break;
       }
-    } while (hasNextPage)
+      totalRequests += friendRequestData.data.length;
+      // to prevent potential infinite loops
+      if (friendRequestData.nextPageCursor && friendRequestData.nextPageCursor !== cursor) {
+        cursor = friendRequestData.nextPageCursor;
+      } else {
+        cursor = ""; // End the loop
+      }
+    } while (cursor);
     return totalRequests;
   }
 }
@@ -71,12 +74,14 @@ class EventListeners {
   }
 
   public static async onConnect(): Promise<void> {
-    chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
+    chrome.runtime.onConnect.addListener(async(port: chrome.runtime.Port) => {
       if (port.name !== "friendRequestPort") return;
       port.onMessage.addListener(async(message: { action: string }) => {
         if (message.action === "start") {
           try {
-            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
+            const storeId = (port.sender?.tab as ChromeTabWithStore)?.cookieStoreId;
+            const cookie = await RobloxAPIService.getRobloxCookie(storeId);
+            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) } as MessageResponse);
           } catch (error: any) {
             console.error("Background fetch error:", error);
             port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
@@ -87,18 +92,18 @@ class EventListeners {
   }
 
   public static async onMessage(): Promise<void> {
-    chrome.runtime.onMessage.addListener(async(request: { action: string }, _sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+    chrome.runtime.onMessage.addListener(async(request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
-          try {
-            sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
-          } catch (error: any) {
-            console.error("Background fetch error:", error);
-            sendResponse({ req: `Error: ${error.message}` } as MessageResponse);
-          }
-        };
-        return true;
+        const storeId = (sender.tab as ChromeTabWithStore)?.cookieStoreId;
+        try {
+          const cookie = await RobloxAPIService.getRobloxCookie(storeId);
+          sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) });
+        } catch (err: any) {
+          sendResponse({ req: `Error: ${err.message}` });
+        }
+        return true; 
       }
-    );
+    });
   }
 
   public static async onInstalled(): Promise<void> {
