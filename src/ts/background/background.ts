@@ -1,4 +1,3 @@
- // RobloxAPIService.ts
 interface FriendRequestData {
   data: Record<string, any>[];
   nextPageCursor: string | null;
@@ -14,11 +13,10 @@ class RobloxAPIService {
    */
   public static async getRobloxCookie(): Promise<string> {
     const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
-    
-    if (!cookies || cookies.length === 0) {
+    const isAuthenticated = cookies.some((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
+    if (!isAuthenticated) {
       throw new Error("No Roblox cookies found. Please log in.");
     }
-
     // Efficiently join cookie names and values
     return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
   }
@@ -50,13 +48,9 @@ class RobloxAPIService {
     let totalRequests = 0;
     let cursor = "";
     let hasNextPage = true;
-
-    while (hasNextPage) {
+    do {
       const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-      
-      // Call our new helper function
       const RequestData = await this.callRobloxAPI<FriendRequestData>(url);
-
       if (RequestData.data && RequestData.data.length > 0) {
         totalRequests += RequestData.data.length;
         cursor = RequestData.nextPageCursor || "";
@@ -64,27 +58,25 @@ class RobloxAPIService {
       } else {
         hasNextPage = false;
       }
-    }
-    
+    } while (hasNextPage)
     return totalRequests;
   }
 }
 
 class EventListeners {
-  public static run(): void {
+  public static init(): void {
     this.onConnect();
     this.onMessage();
     this.onInstalled();
   }
 
-  public static onConnect(): void {
+  public static async onConnect(): Promise<void> {
     chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
       if (port.name !== "friendRequestPort") return;
       port.onMessage.addListener(async(message: { action: string }) => {
         if (message.action === "start") {
           try {
-            const count = await RobloxAPIService.fetchTotalFriendRequestCount();
-            port.postMessage({ req: count } as MessageResponse);
+            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
           } catch (error: any) {
             console.error("Background fetch error:", error);
             port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
@@ -98,8 +90,7 @@ class EventListeners {
     chrome.runtime.onMessage.addListener(async(request: { action: string }, _sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
           try {
-            const count = await RobloxAPIService.fetchTotalFriendRequestCount();
-            sendResponse({ req: count } as MessageResponse);
+            sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
           } catch (error: any) {
             console.error("Background fetch error:", error);
             sendResponse({ req: `Error: ${error.message}` } as MessageResponse);
@@ -122,7 +113,7 @@ class EventListeners {
           });
 
           // 2. Set up a listener to wait for the page to finish loading
-          chrome.tabs.onUpdated.addListener(function listener(tabId: number, info): void {
+          chrome.tabs.onUpdated.addListener(function listener(tabId: number, info: any): void {
             if (tabId === tab.id && info?.status === 'complete') {
               // Remove listener so it doesn't run again
               chrome.tabs.onUpdated.removeListener(listener);
@@ -135,6 +126,7 @@ class EventListeners {
 
                     const shadow = modalContainer.attachShadow({ mode: 'open' });
                     const imageUrl = chrome.runtime.getURL('src/imgs/icon-128.png');
+                    const chromeWebStoreURL = ""
 
                     const html = `
                       <div class="overlay" id="modal-overlay">
@@ -149,6 +141,7 @@ class EventListeners {
                               Your standard friend limit has now been lifted.
                             </p>
                             <p class="sub-text">You can manage this feature on your friend requests page.</p>
+                            <p class="sub-text">if you like the extension please give it a review on the <a href="${chromeWebStoreURL}" target="_blank">Chrome web store!</a>.</p>
                           </div>
                           <div class="actions">
                             <button class="btn-secondary" id="open-friends-btn">Go to Friends</button>
@@ -257,4 +250,4 @@ class EventListeners {
   }
 }
 
-EventListeners.run();
+EventListeners.init();
