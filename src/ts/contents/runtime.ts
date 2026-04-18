@@ -26,7 +26,6 @@ class DOMUtility {
             if (element && element.innerHTML !== displayCount) {
                 element.innerHTML = displayCount;
                 element.setAttribute('id', 'friendSubLeftNav');
-                console.log("Updated left navigation Friends count to:", displayCount);
                 break;
             }
         }
@@ -58,7 +57,6 @@ class ExtensionMessenger {
         if (this.backgroundPort) return this.backgroundPort;
         this.backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
         this.backgroundPort.onDisconnect.addListener(() => {
-            console.warn("Background script disconnected.");
             this.backgroundPort = null;
         });
         return this.backgroundPort;
