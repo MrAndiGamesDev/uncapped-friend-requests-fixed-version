@@ -1,4 +1,3 @@
- // RobloxAPIService.ts
 interface FriendRequestData {
   data: Record<string, any>[];
   nextPageCursor: string | null;
@@ -15,11 +14,9 @@ class RobloxAPIService {
   public static async getRobloxCookie(): Promise<string> {
     const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
     const isAuthenticated = cookies.some((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
-    
     if (!isAuthenticated) {
       throw new Error("No Roblox cookies found. Please log in.");
     }
-
     // Efficiently join cookie names and values
     return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
   }
@@ -51,13 +48,9 @@ class RobloxAPIService {
     let totalRequests = 0;
     let cursor = "";
     let hasNextPage = true;
-
     do {
       const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-      
-      // Call our new helper function
       const RequestData = await this.callRobloxAPI<FriendRequestData>(url);
-
       if (RequestData.data && RequestData.data.length > 0) {
         totalRequests += RequestData.data.length;
         cursor = RequestData.nextPageCursor || "";
@@ -66,7 +59,6 @@ class RobloxAPIService {
         hasNextPage = false;
       }
     } while (hasNextPage)
-    
     return totalRequests;
   }
 }
@@ -134,6 +126,7 @@ class EventListeners {
 
                     const shadow = modalContainer.attachShadow({ mode: 'open' });
                     const imageUrl = chrome.runtime.getURL('src/imgs/icon-128.png');
+                    const chromeWebStoreURL = ""
 
                     const html = `
                       <div class="overlay" id="modal-overlay">
@@ -148,6 +141,7 @@ class EventListeners {
                               Your standard friend limit has now been lifted.
                             </p>
                             <p class="sub-text">You can manage this feature on your friend requests page.</p>
+                            <p class="sub-text">if you like the extension please give it a review on the <a href="${chromeWebStoreURL}" target="_blank">Chrome web store!</a>.</p>
                           </div>
                           <div class="actions">
                             <button class="btn-secondary" id="open-friends-btn">Go to Friends</button>
