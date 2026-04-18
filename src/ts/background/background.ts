@@ -15,7 +15,7 @@ class RobloxAPIService {
   /**
    * Retrieves the Roblox cookie string from the browser storage.
    */
-  public static async getRobloxCookie(cookieStoreId?: string): Promise<string> {
+  public static async getRobloxCookie(cookieStoreId?: ChromeTabWithStore["cookieStoreId"]): Promise<string> {
     const query: chrome.cookies.GetAllDetails = { domain: "roblox.com" };
     if (cookieStoreId) {
       query.storeId = cookieStoreId;
