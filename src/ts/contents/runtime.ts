@@ -1,7 +1,3 @@
-interface ChromeStorageResult {
-  doNotShowPopup?: boolean;
-}
-
 interface MessageResponse {
   req: number | string;
 }
@@ -40,7 +36,6 @@ class DOMUtility {
         return new Promise((resolve: (value: Element | null | PromiseLike<Element | null>) => void) => {
             const existing = document.querySelector(selector);
             if (existing) return resolve(existing);
-
             const observer = new MutationObserver(() => {
                 const element = document.querySelector(selector);
                 if (element) {
@@ -48,7 +43,6 @@ class DOMUtility {
                     observer.disconnect();
                 }
             });
-
             observer.observe(document.body, { childList: true, subtree: true });
         });
     }
@@ -70,7 +64,7 @@ class ExtensionMessenger {
         return this.backgroundPort;
     }
 
-    public static async sendMessageWithRetry(message: MessageRequest, retries = 3, delay = 1000): Promise<MessageResponse> {
+    public static async sendMessageWithRetry(message: MessageRequest, retries: number = 3, delay: number = 1000): Promise<MessageResponse> {
         for (let i = 0; i < retries; i++) {
             try {
                 const port = this.connect();
@@ -86,7 +80,7 @@ class ExtensionMessenger {
                 });
             } catch (error: any) {
                 if (i === retries - 1) throw error;
-                await new Promise(res => setTimeout(res, delay));
+                await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, delay));
             }
         }
         throw new Error("Communication failed.");
@@ -113,20 +107,15 @@ class FriendCountObserver {
     public static init(initialCount: number) {
         this.lastCount = initialCount;
         if (this.observer) return;
-
         this.observer = new MutationObserver((mutations: MutationRecord[]) => {
             for (const mutation of mutations) {
-                const hasAddedNodes = Array.from(mutation.addedNodes).some(node => 
-                    node.nodeType === 1 && 
-                    FRIEND_COUNT_SELECTORS.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s))
-                );
+                const hasAddedNodes = Array.from(mutation.addedNodes).some(node => node.nodeType === 1 && FRIEND_COUNT_SELECTORS.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
                 if (hasAddedNodes && this.lastCount > 0) {
                     DOMUtility.updateLeftNavFriendsCount(this.lastCount);
                     break;
                 }
             }
         });
-
         this.observer.observe(document.body, { childList: true, subtree: true });
     }
 
@@ -168,7 +157,7 @@ class AppController {
         // 1. Update Notification Badges
         const badges = document.getElementsByClassName("notification-blue notification");
         const element = badges[0] as HTMLElement;
-        if (badges.length > 0) {
+        if (badges && badges.length > 0) {
             element.innerHTML = formatted;
             element.setAttribute('id', 'friendSub');
         }
