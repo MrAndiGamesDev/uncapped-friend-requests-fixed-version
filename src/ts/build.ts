@@ -60,7 +60,7 @@ function runProcess(cmd: string, args: string[] = []): Promise<void> {
             }
         );
         proc.on('error', reject);
-        proc.on('close', (code) => {
+        proc.on('close', (code: number) => {
             code === 0 ? resolve() : reject(new Error(`${cmd} exited with code ${code}`));
         });
     });
