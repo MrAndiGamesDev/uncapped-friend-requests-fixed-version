@@ -1,10 +1,11 @@
 {
+  "scripts": {
+    "build": "ts-node src/ts/build.ts"
+  },
   "devDependencies": {
     "@types/chrome": "^0.1.40",
-    "typescript": "^6.0.2"
-  },
-  "scripts": {
-    "build": "tsc",
-    "rebuild": "rmdir /s /q dist && npm run build"
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
   }
 }

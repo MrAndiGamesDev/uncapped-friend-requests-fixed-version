@@ -7,58 +7,68 @@ interface MessageResponse {
   req: number | string;
 }
 
+interface ChromeTabWithStore extends chrome.tabs.Tab {
+  cookieStoreId?: string;
+}
+
 class RobloxAPIService {
   /**
    * Retrieves the Roblox cookie string from the browser storage.
+   * @param cookieStoreId Optional cookie store ID to filter by.
+   * @returns The Roblox cookie string.
    */
-  public static async getRobloxCookie(): Promise<string> {
-    const cookies = await chrome.cookies.getAll({ domain: "roblox.com" });
-    const isAuthenticated = cookies.some((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
-    if (!isAuthenticated) {
-      throw new Error("No Roblox cookies found. Please log in.");
+  public static async getRobloxCookie(cookieStoreId?: ChromeTabWithStore["cookieStoreId"]): Promise<string> {
+    const query: chrome.cookies.GetAllDetails = { domain: "roblox.com" };
+    if (cookieStoreId) {
+      query.storeId = cookieStoreId;
     }
-    // Efficiently join cookie names and values
+    const cookies = await chrome.cookies.getAll(query);
+    const isAuthenticated = cookies.find((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
+    if (!isAuthenticated) {
+      throw new Error("User is not authenticated.");
+    }
     return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
   }
 
   /**
    * A generalized helper to call Roblox APIs with the correct credentials.
-   * @param endpoint The full URL or path for the API
-   * @param method GET, POST, etc.
+   * @param endpoint The full URL or path for the API endpoint.
+   * @param cookie The Roblox cookie string.
+   * @param method GET, POST, etc. Default is "GET".
+   * @returns The response data as type T.
    */
-  public static async callRobloxAPI<T>(endpoint: string, method: string = "GET"): Promise<T> {
-    const rawCookie = await this.getRobloxCookie();
-    const response = await fetch(endpoint, {
+  public static async callRobloxAPI<T>(endpoint: string, cookie: string, method: string = "GET"): Promise<T> {
+    const response: Response = await fetch(endpoint, {
       method,
       headers: {
-        "Cookie": rawCookie,
-        "Content-Type": "application/json",
+        "Cookie": cookie,
+        "Content-Type": "application/json"
       },
     });
-    if (!response.ok) {
-      throw new Error(`Roblox API (${method}) failed: ${response.status} ${response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`Roblox API (${method}) failed: ${response.status}`);
     return await response.json() as T;
   }
 
   /**
-   * Updated fetch logic using the generalized API helper
+   * Updated fetch logic using the generalized API helper.
+   * @param cookie The Roblox cookie string.
+   * @returns The total number of friend requests.
    */
-  public static async fetchTotalFriendRequestCount(): Promise<number> {
+  public static async fetchTotalFriendRequestCount(cookie: string): Promise<number> {
     let totalRequests = 0;
-    let cursor = "";
-    let hasNextPage = true;
+    let cursor = ""; // Start empty to fetch the first page
+
     do {
       const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-      const RequestData = await this.callRobloxAPI<FriendRequestData>(url);
-      if (RequestData.data && RequestData.data.length > 0) {
-        totalRequests += RequestData.data.length;
-        cursor = RequestData.nextPageCursor || "";
-        hasNextPage = !!cursor;
-      } else {
-        hasNextPage = false;
-      }
-    } while (hasNextPage)
+      const friendRequestData: FriendRequestData = await this.callRobloxAPI(url, cookie);
+
+      if (!friendRequestData?.data || friendRequestData.data.length === 0) break;
+
+      totalRequests += friendRequestData.data.length;
+      cursor = friendRequestData.nextPageCursor || ""; // If null, loop ends
+
+    } while (cursor !== ""); 
+
     return totalRequests;
   }
 }
@@ -71,14 +81,15 @@ class EventListeners {
   }
 
   public static async onConnect(): Promise<void> {
-    chrome.runtime.onConnect.addListener((port: chrome.runtime.Port) => {
+    chrome.runtime.onConnect.addListener(async(port: chrome.runtime.Port) => {
       if (port.name !== "friendRequestPort") return;
       port.onMessage.addListener(async(message: { action: string }) => {
         if (message.action === "start") {
           try {
-            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
+            const storeId = (port.sender?.tab as ChromeTabWithStore)?.cookieStoreId;
+            const cookie = await RobloxAPIService.getRobloxCookie(storeId);
+            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) } as MessageResponse);
           } catch (error: any) {
-            console.error("Background fetch error:", error);
             port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
           }
         }
@@ -87,18 +98,18 @@ class EventListeners {
   }
 
   public static async onMessage(): Promise<void> {
-    chrome.runtime.onMessage.addListener(async(request: { action: string }, _sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+    chrome.runtime.onMessage.addListener(async(request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
-          try {
-            sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount() } as MessageResponse);
-          } catch (error: any) {
-            console.error("Background fetch error:", error);
-            sendResponse({ req: `Error: ${error.message}` } as MessageResponse);
-          }
-        };
-        return true;
+        const storeId = (sender.tab as ChromeTabWithStore)?.cookieStoreId;
+        try {
+          const cookie = await RobloxAPIService.getRobloxCookie(storeId);
+          sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) });
+        } catch (err: any) {
+          sendResponse({ req: `Error: ${err.message}` });
+        }
+        return true; 
       }
-    );
+    });
   }
 
   public static async onInstalled(): Promise<void> {
@@ -109,7 +120,7 @@ class EventListeners {
 
           // 1. Create the tab
           const tab = await chrome.tabs.create({ 
-            url: "https://www.roblox.com/home" 
+            url: "https://www.roblox.com/home"
           });
 
           // 2. Set up a listener to wait for the page to finish loading
@@ -120,15 +131,15 @@ class EventListeners {
               chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: async function injectOnBoardingModal() {
-                 if (document.getElementById("uncapped-requests-modal")) return;
-                    const isRobloxDark = document.body.classList.contains('dark-theme') || document.documentElement.classList.contains('dark-theme');
+                 if (document.getElementById("uncapped-friend-requests-modal")) return;
+                    const isDark = document.body.classList.contains('dark-theme') || document.documentElement.classList.contains('dark-theme');
                     const modalContainer = document.createElement('div');
 
                     const shadow = modalContainer.attachShadow({ mode: 'open' });
                     const imageUrl = chrome.runtime.getURL('src/imgs/icon-128.png');
                     const chromeWebStoreURL = ""
 
-                    const html = `
+                    shadow.innerHTML = `
                       <div class="overlay" id="modal-overlay">
                         <div class="modal-card" id="modal-card">
                           <div class="header">Welcome to Uncapped Friend Requests!</div>
@@ -140,8 +151,12 @@ class EventListeners {
                               Thanks for installing <b class="highlight">Uncapped Friend Requests</b>!<br>
                               Your standard friend limit has now been lifted.
                             </p>
-                            <p class="sub-text">You can manage this feature on your friend requests page.</p>
-                            <p class="sub-text">if you like the extension please give it a review on the <a href="${chromeWebStoreURL}" target="_blank">Chrome web store!</a>.</p>
+                            <p class="sub-text">
+                              You can manage this feature on your friend requests page.
+                            </p>
+                            <p class="sub-text">
+                              if you like the extension please give it a review on the <a href="${chromeWebStoreURL}" target="_blank">Chrome web store!</a>
+                            </p>
                           </div>
                           <div class="actions">
                             <button class="btn-secondary" id="open-friends-btn">Go to Friends</button>
@@ -152,27 +167,35 @@ class EventListeners {
 
                       <style>
                         :host {
-                          --bg-card: ${isRobloxDark ? '#232527' : '#ffffff'};
-                          --bg-overlay: ${isRobloxDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(25, 25, 25, 0.6)'};
-                          --bg-header: ${isRobloxDark ? '#2b2d2f' : '#f2f4f5'};
-                          --text-header: ${isRobloxDark ? '#ffffff' : '#191b1d'};
-                          --text-main: ${isRobloxDark ? '#bdbebe' : '#393b3d'};
-                          --text-sub: ${isRobloxDark ? '#adb0b1' : '#656667'};
-                          --highlight-color: ${isRobloxDark ? '#ffffff' : '#000000'};
-                          --border-color: ${isRobloxDark ? '#393b3d' : '#dee1e3'};
+                          --bg-card: ${isDark ? '#232527' : '#ffffff'};
+                          --bg-overlay: ${isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(25, 25, 25, 0.6)'};
+                          --bg-header: ${isDark ? '#2b2d2f' : '#f2f4f5'};
+                          --text-header: ${isDark ? '#ffffff' : '#191b1d'};
+                          --text-main: ${isDark ? '#bdbebe' : '#393b3d'};
+                          --text-sub: ${isDark ? '#adb0b1' : '#656667'};
+                          --highlight-color: ${isDark ? '#ffffff' : '#000000'};
+                          --border-color: ${isDark ? '#393b3d' : '#dee1e3'};
                           --btn-primary-bg: rgb(51, 95, 255);
-                          --btn-secondary-bg: ${isRobloxDark ? '#393b3d' : '#e3e5e7'};
+                          --btn-secondary-bg: ${isDark ? '#393b3d' : '#e3e5e7'};
                         }
 
                         /* --- Animations --- */
-                        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-                        
-                        @keyframes popIn { 
+                        @keyframes fadeIn {
+                          from { opacity: 0; }
+                          to { opacity: 1; }
+                        }
+
+                        @keyframes fadeOut {
+                          from { opacity: 1; }
+                          to { opacity: 0; }
+                        }
+
+                        @keyframes popIn {
                           from { opacity: 0; transform: scale(0.8); } 
                           to { opacity: 1; transform: scale(1); } 
                         }
-                        @keyframes popOut { 
+
+                        @keyframes popOut {
                           from { opacity: 1; transform: scale(1); } 
                           to { opacity: 0; transform: scale(0.8); } 
                         }
@@ -208,9 +231,7 @@ class EventListeners {
                         .btn-secondary:hover { opacity: 0.8; }
                       </style>
                     `;
-
-                    shadow.innerHTML = html;
-                    modalContainer.id = "uncapped-requests-modal";
+                    modalContainer.id = "uncapped-friend-requests-modal";
                     document.body.appendChild(modalContainer);
 
                     const card = shadow.getElementById('modal-card');

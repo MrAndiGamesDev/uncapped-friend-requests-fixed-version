@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Uncapped Roblox Friend Requests (Fixed Version)",
   "description": "Uncap your Roblox friend requests from 500 to unlimited",
-  "version": "2.2.19",
+  "version": "2.2.21",
   "icons": {
     "16": "src/imgs/icon-16.png",
     "32": "src/imgs/icon-32.png",

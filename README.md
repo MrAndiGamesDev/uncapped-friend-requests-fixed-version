@@ -24,7 +24,7 @@ cd uncapped-friend-requests-fixed-version
 ### 2. Install Dependencies
 Install the necessary TypeScript and Chrome type definitions:
 ```sh
-npm install --save-dev @types/chrome typescript
+npm install --save-dev @types/chrome @types/node typescript ts-node
 ```
 
 ### 3. Build the Extension
