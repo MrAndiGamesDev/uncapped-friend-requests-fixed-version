@@ -27,6 +27,7 @@ class GetFriendCountSelectors {
 
 /**
  * Handles all UI-related DOM manipulations, such as updating friend counts
+ * and waiting for elements to be available in the DOM.
  */
 class DOMUtility {
     public static updateLeftNavFriendsCount(count: number | string): void {
@@ -59,6 +60,7 @@ class DOMUtility {
 
 /**
  * Manages the connection and communication with the Extension Background Script
+ * to handle friend request actions.
  */
 class ExtensionMessenger {
     private static backgroundPort: chrome.runtime.Port | null = null;
@@ -77,7 +79,7 @@ class ExtensionMessenger {
             try {
                 const port: chrome.runtime.Port = this.connect();
                 return await new Promise<MessageResponse>((resolve: (value: MessageResponse | PromiseLike<MessageResponse>) => void, reject: (reason?: any) => void) => {
-                    const timeoutId: number = setTimeout(() => reject(new Error("Timeout")), 10000);
+                    const timeoutId = setTimeout(() => reject(new Error("Timeout")), 10000);
                     const handler = (response: MessageResponse) => {
                         clearTimeout(timeoutId);
                         port.onMessage.removeListener(handler);
@@ -107,6 +109,7 @@ class URLUtility {
 
 /**
  * Monitors the DOM for new elements to apply updates automatically when friend counts change
+ * and ensures the count is updated when the page loads.
  */
 class FriendCountObserver {
     private static observer: MutationObserver | null = null;
@@ -118,7 +121,7 @@ class FriendCountObserver {
         this.observer = new MutationObserver((mutations: MutationRecord[]) => {
             for (const mutation of mutations) {
                 const selectors: string[] = GetFriendCountSelectors.getSelectors();
-                const hasAddedNodes: boolean = Array.from(mutation.addedNodes).some(node => node.nodeType === 1 && selectors.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
+                const hasAddedNodes: boolean = Array.from(mutation.addedNodes).some((node: Node): node is Element => node.nodeType === 1 && selectors.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
                 if (hasAddedNodes && this.lastCount > 0) {
                     DOMUtility.updateLeftNavFriendsCount(this.lastCount);
                     break;
@@ -135,6 +138,7 @@ class FriendCountObserver {
 
 /**
  * Orchestrator for the entire script logic, including initial setup, periodic updates, and cleanup
+ * Ensures the friend count is updated periodically and handles cleanup on page unload.
  */
 class AppController {
     private static updateInterval: number | null = null;
@@ -165,7 +169,7 @@ class AppController {
         
         // 1. Update Notification Badges
         const badges: HTMLCollectionOf<Element> = document.getElementsByClassName("notification-blue notification");
-        const element: HTMLElement | null = badges[0] as HTMLElement;
+        const element: HTMLElement = badges[0] as HTMLElement;
 
         if (badges && badges.length > 0) {
             if (element) {
