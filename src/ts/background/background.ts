@@ -75,39 +75,25 @@ class RobloxAPIService {
 
 class EventListeners {
   public static init(): void {
-    this.onConnect();
     this.onMessage();
     this.onInstalled();
   }
 
-  public static async onConnect(): Promise<void> {
-    chrome.runtime.onConnect.addListener(async(port: chrome.runtime.Port) => {
-      if (port.name !== "friendRequestPort") return;
-      port.onMessage.addListener(async(message: { action: string }) => {
-        if (message.action === "start") {
-          try {
-            const storeId = (port.sender?.tab as ChromeTabWithStore)?.cookieStoreId;
-            const cookie = await RobloxAPIService.getRobloxCookie(storeId);
-            port.postMessage({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) } as MessageResponse);
-          } catch (error: any) {
-            port.postMessage({ req: `Error: ${error.message}` } as MessageResponse);
-          }
-        }
-      });
-    });
-  }
-
   public static async onMessage(): Promise<void> {
-    chrome.runtime.onMessage.addListener(async(request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
+    chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
-        const storeId = (sender.tab as ChromeTabWithStore)?.cookieStoreId;
-        try {
-          const cookie = await RobloxAPIService.getRobloxCookie(storeId);
-          sendResponse({ req: await RobloxAPIService.fetchTotalFriendRequestCount(cookie) });
-        } catch (err: any) {
-          sendResponse({ req: `Error: ${err.message}` });
-        }
-        return true; 
+        // Use an async IIFE to handle the async API call
+        (async () => {
+          try {
+            const storeId = (sender.tab as ChromeTabWithStore)?.cookieStoreId;
+            const cookie = await RobloxAPIService.getRobloxCookie(storeId);
+            const count = await RobloxAPIService.fetchTotalFriendRequestCount(cookie);
+            sendResponse({ req: count });
+          } catch (err: any) {
+            sendResponse({ req: `Error: ${err.message}` });
+          }
+        })();
+        return true; // Keeps the channel open for the async response
       }
     });
   }

@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "scripts": {
     "build": "ts-node src/ts/build.ts"
   },
