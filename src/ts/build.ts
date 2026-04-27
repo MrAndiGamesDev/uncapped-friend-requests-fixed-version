@@ -14,7 +14,7 @@ function runBuild(): void {
         console.log('🔍 Checking for type errors (validating environment)...');
         execSync('npx tsc --noEmit', { stdio: 'inherit' });
         console.log('✅ Type check passed.');
-        
+
         // PHASE 2: Clean
         if (existsSync(DIST_PATH)) {
             console.log(`🧹 Cleaning: ${DIST_PATH}`);
