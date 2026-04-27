@@ -32,9 +32,3 @@ Build the extension using TypeScript:
 ```sh
 npm run build
 ```
-
-### 4. Rebuild the Extension
-Rebuild the extension using TypeScript:
-```sh
-npm run rebuild
-```
