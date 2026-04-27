@@ -57,18 +57,13 @@ class RobloxAPIService {
   public static async fetchTotalFriendRequestCount(cookie: string): Promise<number> {
     let totalRequests = 0;
     let cursor = ""; // Start empty to fetch the first page
-
-    do {
+    while (cursor !== "") {
       const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
       const friendRequestData: FriendRequestData = await this.callRobloxAPI(url, cookie);
-
       if (!friendRequestData?.data || friendRequestData.data.length === 0) break;
-
       totalRequests += friendRequestData.data.length;
       cursor = friendRequestData.nextPageCursor || ""; // If null, loop ends
-
-    } while (cursor !== ""); 
-
+    };
     return totalRequests;
   }
 }
