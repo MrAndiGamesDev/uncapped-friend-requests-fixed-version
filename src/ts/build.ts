@@ -4,9 +4,6 @@ import { performance } from 'perf_hooks';
 
 import * as path from 'path';
 
-/**
- * Types
- */
 type Task = {
     name: string;
     run: (ctx: Context) => Promise<void>;
@@ -16,6 +13,22 @@ type Task = {
 type Context = {
     startTime: number;
 };
+
+class Logger {
+    /**
+     * Loggng
+     */
+    public static Log = {
+        startInline: (msg: string) => process.stdout.write(`⏳ ${msg}...`),
+        doneInline: (msg: string, time: number) => process.stdout.write(`\r✔ ${msg} (${time.toFixed(0)}ms)\n`),
+        fail: (msg: string, err?: unknown) => {
+            process.stdout.write('\n');
+            console.error(`❌ ${msg}`);
+            if (err instanceof Error) console.error(err.message);
+        },
+        summary: (total: number) => console.log(`\n🎉 Build finished in (${total.toFixed(0)}ms)`)
+    };
+}
 
 class BuildSystem {
     private static readonly DIST_PATH = path.resolve(process.cwd(), 'dist');
@@ -27,21 +40,7 @@ class BuildSystem {
         process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
     );
 
-    private static readonly USE_NPX = !existsSync(BuildSystem.LOCAL_TSC);
-
-    /**
-     * Logger
-     */
-    private static log = {
-        startInline: (msg: string) => process.stdout.write(`⏳ ${msg}...`),
-        doneInline: (msg: string, time: number) => process.stdout.write(`\r✔ ${msg} (${time.toFixed(0)}ms)\n`),
-        fail: (msg: string, err?: unknown) => {
-            process.stdout.write('\n');
-            console.error(`❌ ${msg}`);
-            if (err instanceof Error) console.error(err.message);
-        },
-        summary: (total: number) => console.log(`\n🎉 Build finished in (${total.toFixed(0)}ms)`)
-    };
+    private static readonly USE_NPX = !existsSync(this.LOCAL_TSC);
 
     /**
      * Process runner
@@ -66,10 +65,10 @@ class BuildSystem {
      * Measured task runner
      */
     private static async runMeasured(task: Task, ctx: Context) {
-        this.log.startInline(task.name);
+        Logger.Log.startInline(task.name);
         const start = performance.now();
         await task.run(ctx);
-        this.log.doneInline(task.name, performance.now() - start);
+        Logger.Log.doneInline(task.name, performance.now() - start);
     }
 
     private static async runTasks(tasks: Task[], ctx: Context): Promise<void> {
@@ -77,7 +76,7 @@ class BuildSystem {
             try {
                 await this.runMeasured(task, ctx);
             } catch (err: any) {
-                this.log.fail(task.name, err);
+                Logger.Log.fail(task.name, err);
                 throw err;
             }
         }
@@ -118,9 +117,9 @@ class BuildSystem {
                 ctx
             );
             const total = performance.now() - ctx.startTime;
-            this.log.summary(total);
+            Logger.Log.summary(total);
         } catch (err: any) {
-            this.log.fail('Build failed', err);
+            Logger.Log.fail('Build failed', err);
             process.exit(1);
         }
     }
