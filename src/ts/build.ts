@@ -1,38 +1,38 @@
-import { rmSync, existsSync } from 'fs';
+import { rmSync, existsSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
 import * as path from 'path';
 
-// Define the root and target directories
 const DIST_PATH = path.resolve(process.cwd(), 'dist');
 
-/**
- * Executes the build process:
- * 1. Cleans the /dist directory.
- * 2. Compiles TypeScript via local tsc.
- */
 function runBuild(): void {
     console.log('🚀 Starting build process...');
 
     try {
-        // 1. Clean up
+        // PHASE 1: Full Type Check (Respecting tsconfig.json)
+        // By not passing --ignoreConfig, we ensure @types/chrome and other settings are loaded.
+        // We use --noEmit to only check for errors.
+        console.log('🔍 Checking for type errors (validating environment)...');
+        execSync('npx tsc --noEmit', { stdio: 'inherit' });
+        console.log('✅ Type check passed.');
+        
+        // PHASE 2: Clean
         if (existsSync(DIST_PATH)) {
             console.log(`🧹 Cleaning: ${DIST_PATH}`);
             rmSync(DIST_PATH, { recursive: true, force: true });
         }
 
-        // 2. Compile TypeScript
-        console.log('📦 Compiling TypeScript...');
-        
-        // execSync will throw an error automatically if 'tsc' fails, 
+        mkdirSync(DIST_PATH);
+
+        // PHASE 3: Compile
+        console.log('📦 Compiling project to /dist...');
         execSync('npx tsc', { stdio: 'inherit' });
         console.log('✅ Build completed successfully!');
     } catch (error) {
-        // Ensure error is handled safely
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`❌ Build failed: ${message}`);
+        // This will now catch genuine type errors in your code, 
+        // as well as any configuration issues.
+        console.error(`\n❌ Build process failed due to errors.`);
         process.exit(1);
     }
 }
 
-// Invoke the build
 runBuild();

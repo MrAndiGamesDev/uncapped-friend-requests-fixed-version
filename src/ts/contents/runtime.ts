@@ -59,41 +59,20 @@ class DOMUtility {
 }
 
 /**
- * Manages the connection and communication with the Extension Background Script
- * to handle friend request actions.
+ * Simplified Messenger using runtime.sendMessage instead of long-lived ports.
+ * This automatically wakes the background script and handles the lifecycle.
  */
 class ExtensionMessenger {
-    private static backgroundPort: chrome.runtime.Port | null = null;
-
-    private static connect(): chrome.runtime.Port {
-        if (this.backgroundPort) return this.backgroundPort;
-        this.backgroundPort = chrome.runtime.connect({ name: "friendRequestPort" });
-        this.backgroundPort.onDisconnect.addListener(() => {
-            this.backgroundPort = null;
+    public static async sendMessage(message: MessageRequest): Promise<MessageResponse> {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(message, (response: MessageResponse) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(response);
+                }
+            });
         });
-        return this.backgroundPort;
-    }
-
-    public static async sendMessageWithRetry(message: MessageRequest, retries: number = 3, delay: number = 1000): Promise<MessageResponse> {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const port: chrome.runtime.Port = this.connect();
-                return await new Promise<MessageResponse>((resolve: (value: MessageResponse | PromiseLike<MessageResponse>) => void, reject: (reason?: any) => void) => {
-                    const timeoutId = setTimeout(() => reject(new Error("Timeout")), 10000);
-                    const handler = (response: MessageResponse) => {
-                        clearTimeout(timeoutId);
-                        port.onMessage.removeListener(handler);
-                        resolve(response);
-                    };
-                    port.onMessage.addListener(handler);
-                    port.postMessage(message);
-                });
-            } catch (error: any) {
-                if (i === retries - 1) throw error;
-                await new Promise((resolve: (value: unknown) => void) => setTimeout(resolve, delay));
-            }
-        }
-        throw new Error("Communication failed.");
     }
 }
 
@@ -153,7 +132,8 @@ class AppController {
 
     private static async refresh() {
         try {
-            const response: MessageResponse = await ExtensionMessenger.sendMessageWithRetry({ action: "start" });
+            // Simple call, no manual port connection management required
+            const response: MessageResponse = await ExtensionMessenger.sendMessage({ action: "start" });
             const count: number | string = response.req;
             const numCount: number = typeof count === 'number' ? count : parseInt(String(count)) || 0;
             FriendCountObserver.init(numCount);
