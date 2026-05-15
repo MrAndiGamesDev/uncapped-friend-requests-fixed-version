@@ -4,8 +4,8 @@
     "build": "ts-node src/ts/build.ts"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.40",
-    "@types/node": "^25.6.0",
+    "@types/chrome": "^0.1.42",
+    "@types/node": "^25.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }

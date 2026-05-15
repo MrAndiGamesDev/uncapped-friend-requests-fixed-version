@@ -12,6 +12,9 @@ interface ChromeTabWithStore extends chrome.tabs.Tab {
 }
 
 class RobloxAPIService {
+  private static cachedCount: number | null = null;
+  private static lastFetchTime: number = 0;
+  private static CACHE_DURATION = 60000; // 1 minute cache
   /**
    * Retrieves the Roblox cookie string from the browser storage.
    * @param cookieStoreId Optional cookie store ID to filter by.
@@ -54,17 +57,34 @@ class RobloxAPIService {
    * @param cookie The Roblox cookie string.
    * @returns The total number of friend requests.
    */
-  public static async fetchTotalFriendRequestCount(cookie: string): Promise<number> {
-    let totalRequests = 0;
-    let cursor = ""; // Start empty to fetch the first page
-    while (cursor !== "") {
-      const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&cursor=${encodeURIComponent(cursor)}&sortOrder=Desc`;
-      const friendRequestData: FriendRequestData = await this.callRobloxAPI(url, cookie);
-      if (!friendRequestData?.data || friendRequestData.data.length === 0) break;
-      totalRequests += friendRequestData.data.length;
-      cursor = friendRequestData.nextPageCursor || ""; // If null, loop ends
-    };
-    return totalRequests;
+  public static async fetchTotalFriendRequestCount(cookie: string, force = false): Promise<number> {
+    const now = Date.now();
+    
+    // Return cached version if it's been less than a minute
+    if (!force && this.cachedCount !== null && (now - this.lastFetchTime < this.CACHE_DURATION)) {
+      return this.cachedCount;
+    }
+
+    let total = 0;
+    let cursor: string | null = null;
+
+    try {
+      do {
+        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursor ? `&cursor=${cursor}` : ""}`;
+        const res: FriendRequestData = await this.callRobloxAPI(url, cookie);
+        if (!res?.data) break;
+        total += res.data.length;
+        cursor = res.nextPageCursor;
+      } while (cursor);
+
+      this.cachedCount = total;
+      this.lastFetchTime = now;
+      return total;
+    } catch (err: any) {
+      // If we hit a 429, return the last known good count instead of the error string
+      if (this.cachedCount !== null) return this.cachedCount;
+      throw err;
+    }
   }
 }
 
