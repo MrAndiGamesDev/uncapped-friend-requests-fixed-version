@@ -12,9 +12,10 @@ interface ChromeTabWithStore extends chrome.tabs.Tab {
 }
 
 class RobloxAPIService {
+  private static CACHE_DURATION = 60000; // 1 minute cache
   private static cachedCount: number | null = null;
   private static lastFetchTime: number = 0;
-  private static CACHE_DURATION = 60000; // 1 minute cache
+
   /**
    * Retrieves the Roblox cookie string from the browser storage.
    * @param cookieStoreId Optional cookie store ID to filter by.
@@ -70,13 +71,14 @@ class RobloxAPIService {
 
     try {
       do {
-        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursor ? `&cursor=${cursor}` : ""}`;
+        const cursorParam = cursor ? `&cursor=${cursor}` : "";
+        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
         const res: FriendRequestData = await this.callRobloxAPI(url, cookie);
         if (!res?.data) break;
         total += res.data.length;
         cursor = res.nextPageCursor;
       } while (cursor);
-
+      
       this.cachedCount = total;
       this.lastFetchTime = now;
       return total;
