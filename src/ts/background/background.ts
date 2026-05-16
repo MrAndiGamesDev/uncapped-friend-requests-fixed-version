@@ -91,7 +91,7 @@ class RobloxAPIService {
 }
 
 class EventListeners {
-  public static init(): void {
+  public static init() {
     this.onMessage();
     this.onInstalled();
   }
@@ -99,7 +99,7 @@ class EventListeners {
   public static async onMessage(): Promise<void> {
     chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
-        // Use an async IIFE to handle the async API call
+        // Use an async function to handle the async API call
         (async () => {
           try {
             const storeId = (sender.tab as ChromeTabWithStore)?.cookieStoreId;
@@ -127,7 +127,7 @@ class EventListeners {
           });
 
           // 2. Set up a listener to wait for the page to finish loading
-          chrome.tabs.onUpdated.addListener(function listener(tabId: number, info: any): void {
+          chrome.tabs.onUpdated.addListener(function listener(tabId: number, info: any) {
             if (tabId === tab.id && info?.status === 'complete') {
               // Remove listener so it doesn't run again
               chrome.tabs.onUpdated.removeListener(listener);

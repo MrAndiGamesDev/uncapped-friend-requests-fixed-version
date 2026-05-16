@@ -15,9 +15,6 @@ type Context = {
 };
 
 class Logger {
-    /**
-     * Loggng
-     */
     public static Log = {
         startInline: (msg: string) => process.stdout.write(`⏳ ${msg}...`),
         doneInline: (msg: string, time: number) => process.stdout.write(`\r✔ ${msg} (${time.toFixed(0)}ms)\n`),
@@ -31,13 +28,14 @@ class Logger {
 }
 
 class BuildSystem {
+    private static readonly ISWINDOWS = process.platform === 'win32';
     private static readonly DIST_PATH = path.resolve(process.cwd(), 'dist');
 
     private static readonly LOCAL_TSC = path.resolve(
         process.cwd(),
         'node_modules',
         '.bin',
-        process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
+        this.ISWINDOWS ? 'tsc.cmd' : 'tsc'
     );
 
     private static readonly USE_NPX = !existsSync(this.LOCAL_TSC);
@@ -47,10 +45,9 @@ class BuildSystem {
      */
     private static runProcess(cmd: string, args: string[] = []): Promise<void> {
         return new Promise((resolve: () => void, reject: (err: Error) => void) => {
-            const isWindows = process.platform === 'win32';
             const proc = spawn(
-                isWindows ? 'cmd.exe' : cmd,
-                isWindows ? ['/c', cmd, ...args] : args,
+                this.ISWINDOWS ? 'cmd.exe' : cmd,
+                this.ISWINDOWS ? ['/c', cmd, ...args] : args,
                 {
                     stdio: 'inherit',
                     shell: false
@@ -116,8 +113,7 @@ class BuildSystem {
                 [this.typeCheck, this.clean, this.compile],
                 ctx
             );
-            const total = performance.now() - ctx.startTime;
-            Logger.Log.summary(total);
+            Logger.Log.summary(performance.now() - ctx.startTime);
         } catch (err: any) {
             Logger.Log.fail('Build failed', err);
             process.exit(1);

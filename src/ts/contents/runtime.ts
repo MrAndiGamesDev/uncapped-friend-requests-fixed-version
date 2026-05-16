@@ -19,10 +19,6 @@ class GetFriendCountSelectors {
         'a[href*="friends"] span.friend-count',
         'a[href*="friends"] .nav-menu-item-text + span'
     ];
-
-    public static getSelectors(): FriendCountSelectors["targetSelectors"] {
-        return this.targetSelectors;
-    }
 }
 
 /**
@@ -32,7 +28,7 @@ class GetFriendCountSelectors {
 class DOMUtility {
     public static updateLeftNavFriendsCount(count: number | string): void {
         const displayCount = typeof count === 'number' ? count.toLocaleString() : String(count);
-        for (const selector of GetFriendCountSelectors.getSelectors()) {
+        for (const selector of GetFriendCountSelectors.targetSelectors) {
             const element: HTMLSpanElement | null = document.querySelector<HTMLSpanElement>(selector);
             if (element && element.innerHTML !== displayCount) {
                 element.innerHTML = displayCount;
@@ -99,7 +95,7 @@ class FriendCountObserver {
         if (this.observer) return;
         this.observer = new MutationObserver((mutations: MutationRecord[]) => {
             for (const mutation of mutations) {
-                const selectors: string[] = GetFriendCountSelectors.getSelectors();
+                const selectors: string[] = GetFriendCountSelectors.targetSelectors;
                 const hasAddedNodes: boolean = Array.from(mutation.addedNodes).some((node: Node): node is Element => node.nodeType === 1 && selectors.some((s: string) => (node as Element).matches(s) || (node as Element).querySelector(s)));
                 if (hasAddedNodes && this.lastCount > 0) {
                     DOMUtility.updateLeftNavFriendsCount(this.lastCount);
