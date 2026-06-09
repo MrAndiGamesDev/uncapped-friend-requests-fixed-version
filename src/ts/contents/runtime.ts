@@ -14,10 +14,12 @@ interface FriendCountSelectors {
  * Holds the selectors used to target friend count elements in the DOM
  */
 class GetFriendCountSelectors {
+    private static readonly friendHref: string = 'a[href*="friends"]';
+    
     public static readonly targetSelectors: FriendCountSelectors["targetSelectors"] = [
-        'a[href*="friends"] div.foundation-web-badge span',
-        'a[href*="friends"] span.friend-count',
-        'a[href*="friends"] .nav-menu-item-text + span'
+        `${this.friendHref} div.foundation-web-badge span`,
+        `${this.friendHref} span.friend-count`,
+        `${this.friendHref} .nav-menu-item-text + span`
     ];
 }
 
