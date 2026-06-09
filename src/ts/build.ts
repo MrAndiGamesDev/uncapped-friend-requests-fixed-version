@@ -28,14 +28,14 @@ class Logger {
 }
 
 class BuildSystem {
-    private static readonly ISWINDOWS = process.platform === 'win32';
+    private static readonly IS_WINDOWS = process.platform === 'win32';
     private static readonly DIST_PATH = path.resolve(process.cwd(), 'dist');
 
     private static readonly LOCAL_TSC = path.resolve(
         process.cwd(),
         'node_modules',
         '.bin',
-        this.ISWINDOWS ? 'tsc.cmd' : 'tsc'
+        this.IS_WINDOWS ? 'tsc.cmd' : 'tsc'
     );
 
     private static readonly USE_NPX = !existsSync(this.LOCAL_TSC);
@@ -46,8 +46,8 @@ class BuildSystem {
     private static runProcess(cmd: string, args: string[] = []): Promise<void> {
         return new Promise((resolve: () => void, reject: (err: Error) => void) => {
             const proc = spawn(
-                this.ISWINDOWS ? 'cmd.exe' : cmd,
-                this.ISWINDOWS ? ['/c', cmd, ...args] : args,
+                this.IS_WINDOWS ? 'cmd.exe' : cmd,
+                this.IS_WINDOWS ? ['/c', cmd, ...args] : args,
                 {
                     stdio: 'inherit',
                     shell: false

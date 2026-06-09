@@ -12,38 +12,50 @@ interface ChromeTabWithStore extends chrome.tabs.Tab {
 }
 
 class RobloxAPIService {
-  private static CACHE_DURATION = 60000; // 1 minute cache
+  private static cacheDuration: number = 60000; // 1 minute cache
   private static cachedCount: number | null = null;
   private static lastFetchTime: number = 0;
 
   /**
-   * Retrieves the Roblox cookie string from the browser storage.
-   * @param cookieStoreId Optional cookie store ID to filter by.
-   * @returns The Roblox cookie string.
+   * Detects if the user has a slow connection based on modern browser APIs.
+   * If the Network Information API is unavailable, it defaults to false.
+   */
+  private static isConnectionSlow(): boolean {
+    const nav = navigator as any;
+    const connection = nav.connection || nav.mozConnection || nav.webkitConnection;
+    
+    if (connection) {
+      // 1. Check if the user is on an explicit saving mode or slow type
+      if (connection.saveData === true) return true;
+      if (['slow-2g', '2g', '3g'].includes(connection.effectiveType)) return true;
+      
+      // 2. Check latency (RTT). If Round Trip Time is > 500ms, it's a slow connection
+      if (connection.rtt && connection.rtt > 500) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Retrieves the Roblox cookie string from browser storage.
    */
   public static async getRobloxCookie(cookieStoreId?: ChromeTabWithStore["cookieStoreId"]): Promise<string> {
     const query: chrome.cookies.GetAllDetails = { domain: "roblox.com" };
-    if (cookieStoreId) {
-      query.storeId = cookieStoreId;
-    }
+    if (cookieStoreId) query.storeId = cookieStoreId;
+    
     const cookies = await chrome.cookies.getAll(query);
     const isAuthenticated = cookies.find((c: chrome.cookies.Cookie) => c.name === ".ROBLOSECURITY");
-    if (!isAuthenticated) {
-      throw new Error("User is not authenticated.");
-    }
+    if (!isAuthenticated) throw new Error("User is not authenticated.");
+    
     return cookies.map((c: chrome.cookies.Cookie) => `${c.name}=${c.value}`).join('; ');
   }
 
   /**
-   * A generalized helper to call Roblox APIs with the correct credentials.
-   * @param endpoint The full URL or path for the API endpoint.
-   * @param cookie The Roblox cookie string.
-   * @param method GET, POST, etc. Default is "GET".
-   * @returns The response data as type T.
+   * Enhanced helper with an AbortSignal to forcefully cut off hanging/slow requests.
    */
-  public static async callRobloxAPI<T>(endpoint: string, cookie: string, method: string = "GET"): Promise<T> {
+  public static async callRobloxAPI<T>(endpoint: string, cookie: string, signal: AbortSignal, method: string = "GET"): Promise<T> {
     const response: Response = await fetch(endpoint, {
       method,
+      signal, // Attach the abort signal here
       headers: {
         "Cookie": cookie,
         "Content-Type": "application/json"
@@ -54,38 +66,77 @@ class RobloxAPIService {
   }
 
   /**
-   * Updated fetch logic using the generalized API helper.
-   * @param cookie The Roblox cookie string.
-   * @returns The total number of friend requests.
+   * Evaluates pagination while listening to the abort signal.
    */
-  public static async fetchTotalFriendRequestCount(cookie: string, force = false): Promise<number> {
-    const now = Date.now();
-    
-    // Return cached version if it's been less than a minute
-    if (!force && this.cachedCount !== null && (now - this.lastFetchTime < this.CACHE_DURATION)) {
-      return this.cachedCount;
-    }
-
+  private static async executeFetch(cookie: string, signal: AbortSignal): Promise<number> {
     let total = 0;
     let cursor: string | null = null;
 
-    try {
-      do {
-        const cursorParam = cursor ? `&cursor=${cursor}` : "";
-        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
-        const res: FriendRequestData = await this.callRobloxAPI(url, cookie);
-        if (!res?.data) break;
-        total += res.data.length;
-        cursor = res.nextPageCursor;
-      } while (cursor);
+    do {
+      const cursorParam = cursor ? `&cursor=${cursor}` : "";
+      const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
       
-      this.cachedCount = total;
+      const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
+      if (!res?.data) break;
+      
+      total += res.data.length;
+      cursor = res.nextPageCursor;
+    } while (cursor);
+
+    return total;
+  }
+
+  /**
+   * THE TRUE SAFE CALLBACK (Network-Aware & Timeout Protected)
+   */
+  public static async fetchTotalFriendRequestCount(cookie: string, force = false): Promise<number> {
+    const now = Date.now();
+    const isSlow = this.isConnectionSlow();
+
+    // 1. Adaptive Cache Strategy:
+    // If connection is slow, we aggressively prefer stale cache over making a agonizingly slow network call.
+    if (isSlow && this.cachedCount !== null) {
+      console.info("[RobloxAPIService] Slow connection detected. Fast-tracking cached fallback.");
+      return this.cachedCount;
+    }
+
+    // Standard fresh-cache validation
+    if (!force && this.cachedCount !== null && (now - this.lastFetchTime < this.cacheDuration)) {
+      return this.cachedCount;
+    }
+
+    // 2. Setup the Network Timeout (AbortController)
+    const controller = new AbortController();
+    
+    // Set dynamic timeout thresholds: Give a healthy connection 6 seconds, but cut a slow connection off early at 3 seconds
+    const timeoutThreshold = isSlow ? 4000 : 7000; 
+    
+    const timeoutId = setTimeout(() => {
+      console.warn(`[RobloxAPIService] Request exceeded ${timeoutThreshold}ms limit. Aborting...`);
+      controller.abort();
+    }, timeoutThreshold);
+
+    try {
+      // 3. Fire the live network operation
+      const freshTotal = await this.executeFetch(cookie, controller.signal);
+      clearTimeout(timeoutId); // Network completed in time, clear the ticking clock!
+      
+      this.cachedCount = freshTotal;
       this.lastFetchTime = now;
-      return total;
+      return freshTotal;
+
     } catch (err: any) {
-      // If we hit a 429, return the last known good count instead of the error string
-      if (this.cachedCount !== null) return this.cachedCount;
-      throw err;
+      clearTimeout(timeoutId); // Ensure cleanup on failures too
+
+      const isTimeout = err.name === 'AbortError';
+      console.warn(`[RobloxAPIService] Safe Call recovery triggered. Reason: ${isTimeout ? 'Network Timeout' : err.message}`);
+
+      // 4. Tiered Degraded Fallbacks
+      if (this.cachedCount !== null) {
+        return this.cachedCount; // Serve old data
+      }
+
+      return 0; // Absolute worst case scenario safe default
     }
   }
 }
@@ -96,7 +147,7 @@ class EventListeners {
     this.onInstalled();
   }
 
-  public static async onMessage(): Promise<void> {
+  private static async onMessage() {
     chrome.runtime.onMessage.addListener((request: { action: string }, sender: chrome.runtime.MessageSender, sendResponse: (response: MessageResponse) => void) => {
       if (request.action === "start") {
         // Use an async function to handle the async API call
@@ -115,7 +166,7 @@ class EventListeners {
     });
   }
 
-  public static async onInstalled(): Promise<void> {
+  private static async onInstalled() {
     chrome.runtime.onInstalled.addListener(async(details: chrome.runtime.InstalledDetails) => {
       if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
         try {
