@@ -55,7 +55,7 @@ class RobloxAPIService {
   public static async callRobloxAPI<T>(endpoint: string, cookie: string, signal: AbortSignal, method: string = "GET"): Promise<T> {
     const response: Response = await fetch(endpoint, {
       method,
-      signal, // Attach the abort signal here
+      signal,
       headers: {
         "Cookie": cookie,
         "Content-Type": "application/json"
@@ -67,21 +67,57 @@ class RobloxAPIService {
 
   /**
    * Evaluates pagination while listening to the abort signal.
+   * Refactored to seamlessly handle bad API responses, unexpected schemas, and rate limits.
    */
   private static async executeFetch(cookie: string, signal: AbortSignal): Promise<number> {
-    let total = 0;
     let cursor: string | null = null;
+    let total = 0;
+    let safetyCounter = 0;
+    let maxPages = 100; // Safeguard against infinite loops if the API returns a broken repeating cursor
 
     do {
-      const cursorParam = cursor ? `&cursor=${cursor}` : "";
-      const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
-      
-      const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
-      if (!res?.data) break;
-      
-      total += res.data.length;
-      cursor = res.nextPageCursor;
-    } while (cursor);
+      try {
+        // 1. Construct the URL safely
+        const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
+        
+        // 2. Execute call passing the required cookie string
+        const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
+        
+        // 3. Robust Data Validation 
+        // If the API returns an unexpected format or data array is missing, exit safely with what we accumulated
+        if (!res || !Array.isArray(res.data)) {
+          console.warn("[RobloxAPIService] Unexpected API payload structure or empty data array encountered.");
+          break;
+        }
+        
+        // 4. Accumulate and step forward
+        total += res.data.length;
+        
+        // Safety check: If the API says there is a next page, but didn't give us data on this page, break.
+        if (res.data.length === 0) {
+          break;
+        }
+
+        // Track the next cursor
+        const nextCursor = res.nextPageCursor;
+        
+        // Anti-infinite loop check: If the cursor didn't change, Roblox API is looping old data. Break.
+        if (nextCursor === cursor) {
+          break;
+        }
+
+        cursor = nextCursor;
+        safetyCounter++;
+
+      } catch (error: any) {
+        // 5. Graceful Error Recovery
+        // If a specific pagination request fails (e.g. Rate limit 429), return the total we have so far instead of crashing
+        console.error(`[RobloxAPIService] Pagination halted at page ${safetyCounter} due to error:`, error);
+        break; 
+      }
+
+    } while (cursor && safetyCounter < maxPages);
 
     return total;
   }
@@ -94,7 +130,7 @@ class RobloxAPIService {
     const isSlow = this.isConnectionSlow();
 
     // 1. Adaptive Cache Strategy:
-    // If connection is slow, we aggressively prefer stale cache over making a agonizingly slow network call.
+    // If connection is slow, we aggressively prefer stale cache over making an agonizingly slow network call.
     if (isSlow && this.cachedCount !== null) {
       console.info("[RobloxAPIService] Slow connection detected. Fast-tracking cached fallback.");
       return this.cachedCount;
@@ -108,8 +144,8 @@ class RobloxAPIService {
     // 2. Setup the Network Timeout (AbortController)
     const controller = new AbortController();
     
-    // Set dynamic timeout thresholds: Give a healthy connection 6 seconds, but cut a slow connection off early at 3 seconds
-    const timeoutThreshold = isSlow ? 4000 : 7000; 
+    // Set dynamic timeout thresholds: Give a healthy connection 7 seconds, but cut a slow connection off early at 3 seconds
+    const timeoutThreshold = isSlow ? 3000 : 7000; 
     
     const timeoutId = setTimeout(() => {
       console.warn(`[RobloxAPIService] Request exceeded ${timeoutThreshold}ms limit. Aborting...`);
@@ -117,7 +153,7 @@ class RobloxAPIService {
     }, timeoutThreshold);
 
     try {
-      // 3. Fire the live network operation
+      // 3. Fire the live network operation passing the cookie down
       const freshTotal = await this.executeFetch(cookie, controller.signal);
       clearTimeout(timeoutId); // Network completed in time, clear the ticking clock!
       
