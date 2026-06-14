@@ -13,9 +13,10 @@ interface ChromeTabWithStore extends chrome.tabs.Tab {
 
 class RobloxAPIService {
   private static cacheDuration: number = 60000; // 1 minute cache
-  private static cachedCount: number | null = null;
   private static lastFetchTime: number = 0;
 
+  private static cachedCount: number | null = null;
+  private static activeFetchPromise: Promise<number> | null = null;
   /**
    * Detects if the user has a slow connection based on modern browser APIs.
    * If the Network Information API is unavailable, it defaults to false.
@@ -55,7 +56,7 @@ class RobloxAPIService {
   public static async callRobloxAPI<T>(endpoint: string, cookie: string, signal: AbortSignal, method: string = "GET"): Promise<T> {
     const response: Response = await fetch(endpoint, {
       method,
-      signal, // Attach the abort signal here
+      signal,
       headers: {
         "Cookie": cookie,
         "Content-Type": "application/json"
@@ -71,72 +72,102 @@ class RobloxAPIService {
   private static async executeFetch(cookie: string, signal: AbortSignal): Promise<number> {
     let total = 0;
     let cursor: string | null = null;
+    let safetyCounter = 0;
+    const maxPages = 100; // Hard cap up to 10,000 pending requests
 
     do {
-      const cursorParam = cursor ? `&cursor=${cursor}` : "";
-      const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
-      
-      const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
-      if (!res?.data) break;
-      
-      total += res.data.length;
-      cursor = res.nextPageCursor;
-    } while (cursor);
+      try {
+        const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+        const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
+        
+        const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
+        
+        if (!res || !Array.isArray(res.data)) {
+          console.warn("[RobloxAPIService] Unexpected API payload structure.");
+          break;
+        }
+        
+        total += res.data.length;
+        if (res.data.length === 0) break;
+
+        const nextCursor = res.nextPageCursor;
+        if (nextCursor === cursor) break;
+
+        cursor = nextCursor;
+        safetyCounter++;
+
+        if (safetyCounter >= maxPages) {
+          console.warn(`[RobloxAPIService] Reached hard pagination cap of ${maxPages} pages.`);
+          break;
+        }
+
+      } catch (error: any) {
+        console.error(`[RobloxAPIService] Loop error at page ${safetyCounter}:`, error.message);
+        break; // Return whatever partial data we compiled up to this failure point
+      }
+
+    } while (cursor !== null);
 
     return total;
   }
 
   /**
-   * THE TRUE SAFE CALLBACK (Network-Aware & Timeout Protected)
+   * THE TRUE SAFE CALLBACK (Network-Aware, Timeout Protected & Single-Flight Deduped)
    */
   public static async fetchTotalFriendRequestCount(cookie: string, force = false): Promise<number> {
     const now = Date.now();
     const isSlow = this.isConnectionSlow();
 
-    // 1. Adaptive Cache Strategy:
-    // If connection is slow, we aggressively prefer stale cache over making a agonizingly slow network call.
+    // 1. Connection-Aware Fast Fallback
     if (isSlow && this.cachedCount !== null) {
-      console.info("[RobloxAPIService] Slow connection detected. Fast-tracking cached fallback.");
       return this.cachedCount;
     }
 
-    // Standard fresh-cache validation
+    // 2. Standard Cache Expiry Validation
     if (!force && this.cachedCount !== null && (now - this.lastFetchTime < this.cacheDuration)) {
       return this.cachedCount;
     }
 
-    // 2. Setup the Network Timeout (AbortController)
-    const controller = new AbortController();
-    
-    // Set dynamic timeout thresholds: Give a healthy connection 6 seconds, but cut a slow connection off early at 3 seconds
-    const timeoutThreshold = isSlow ? 4000 : 7000; 
-    
-    const timeoutId = setTimeout(() => {
-      console.warn(`[RobloxAPIService] Request exceeded ${timeoutThreshold}ms limit. Aborting...`);
-      controller.abort();
-    }, timeoutThreshold);
+    // 3. SINGLE-FLIGHT LOCK MECHANISM
+    // If a request chain is already actively processing network data, do NOT start a new one.
+    // Return the existing running Promise to all simultaneous callers.
+    if (this.activeFetchPromise) {
+      console.info("[RobloxAPIService] Concurrency detected. Merging request into active pipeline thread.");
+      return this.activeFetchPromise;
+    }
+
+    // 4. Construct Single Execution Thread
+    this.activeFetchPromise = (async () => {
+      const controller = new AbortController();
+      const timeoutThreshold = isSlow ? 3000 : 7000; 
+      
+      const timeoutId = setTimeout(() => {
+        console.warn(`[RobloxAPIService] Request timeout exceeded threshold.`);
+        controller.abort();
+      }, timeoutThreshold);
+
+      try {
+        const freshTotal = await this.executeFetch(cookie, controller.signal);
+        clearTimeout(timeoutId);
+
+        this.cachedCount = freshTotal;
+        this.lastFetchTime = Date.now();
+        return freshTotal;
+
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        const isTimeout = err.name === 'AbortError';
+        console.warn(`[RobloxAPIService] Fetch failure handled. Reason: ${isTimeout ? 'Timeout' : err.message}`);
+
+        return this.cachedCount !== null ? this.cachedCount : 0;
+      }
+    })();
 
     try {
-      // 3. Fire the live network operation
-      const freshTotal = await this.executeFetch(cookie, controller.signal);
-      clearTimeout(timeoutId); // Network completed in time, clear the ticking clock!
-      
-      this.cachedCount = freshTotal;
-      this.lastFetchTime = now;
-      return freshTotal;
-
-    } catch (err: any) {
-      clearTimeout(timeoutId); // Ensure cleanup on failures too
-
-      const isTimeout = err.name === 'AbortError';
-      console.warn(`[RobloxAPIService] Safe Call recovery triggered. Reason: ${isTimeout ? 'Network Timeout' : err.message}`);
-
-      // 4. Tiered Degraded Fallbacks
-      if (this.cachedCount !== null) {
-        return this.cachedCount; // Serve old data
-      }
-
-      return 0; // Absolute worst case scenario safe default
+      return await this.activeFetchPromise;
+    } finally {
+      // Always free up the lock after the running operation wraps up execution
+      this.activeFetchPromise = null;
     }
   }
 }
