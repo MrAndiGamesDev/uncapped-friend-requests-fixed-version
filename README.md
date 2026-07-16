@@ -12,7 +12,7 @@ Your privacy is important. This extension:
 ## 🛠️ Development Setup
 
 ### Prerequisites
-Before you begin, ensure that you have [Node.js](https://nodejs.org/) installed on your local machine.
+Before you begin, ensure that you have [Node.js](https://nodejs.org/) installed on your local machine.\n
 And ensure that you also have [Git](https://git-scm.com/) installed on your local machine.
 
 ### 1. Clone the Repository
