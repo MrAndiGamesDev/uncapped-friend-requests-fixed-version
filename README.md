@@ -12,7 +12,7 @@ Your privacy is important. This extension:
 ## 🛠️ Development Setup
 
 ### Prerequisites
-Before you begin, ensure you have [Node.js](https://nodejs.org/) installed on your machine.
+Before you begin, ensure that you have [Node.js](https://nodejs.org/) and [Git](https://git-scm.com/) installed on your local machine.
 
 ### 1. Clone the Repository
 First, clone this repository to your local machine:
@@ -32,3 +32,6 @@ Build the extension using TypeScript:
 ```sh
 npm run build
 ```
+
+### 4. To Commit
+You will need to configure git, do some research on how to do that
