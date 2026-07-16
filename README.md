@@ -35,7 +35,4 @@ npm run build
 ```
 
 ### 4. To Commit
-You will need to configure git:
-```sh
-do some research on how to do that
-```
+You will need to configure git, do some research on how to do that
