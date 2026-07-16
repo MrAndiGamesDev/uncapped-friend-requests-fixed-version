@@ -34,7 +34,7 @@ Build the extension using TypeScript:
 npm run build
 ```
 
-### 4. To Commit on github
+### 4. To Commit
 You will need to configure git by simply typing this on any terminal:
 ```sh
 git config --global user.name "Your Name" and git config --global user.email "Your Email Were"
