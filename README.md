@@ -35,7 +35,7 @@ npm run build
 ```
 
 ### 4. To Commit
-You will need to configure git by simply typing this on any terminal:
+You will need to configure git:
 ```sh
-git config --global user.name "Your Name" and git config --global user.email "Your Email Were"
+do some research on how to do that
 ```
