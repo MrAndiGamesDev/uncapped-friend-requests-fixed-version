@@ -53,10 +53,9 @@ class RobloxAPIService {
   /**
    * Enhanced helper with an AbortSignal to forcefully cut off hanging/slow requests.
    */
-  public static async callRobloxAPI<T>(endpoint: string, cookie: string, signal: AbortSignal, method: string = "GET"): Promise<T> {
+  public static async callRobloxAPI<T>(endpoint: string, cookie: string, method: string = "GET"): Promise<T> {
     const response: Response = await fetch(endpoint, {
       method,
-      signal,
       headers: {
         "Cookie": cookie,
         "Content-Type": "application/json"
@@ -69,7 +68,7 @@ class RobloxAPIService {
   /**
    * Evaluates pagination while listening to the abort signal.
    */
-  private static async executeFetch(cookie: string, signal: AbortSignal): Promise<number> {
+  private static async executeFetch(cookie: string): Promise<number> {
     let total = 0;
     let cursor: string | null = null;
     let safetyCounter = 0;
@@ -80,7 +79,7 @@ class RobloxAPIService {
         const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
         const url = `https://friends.roblox.com/v1/my/friends/requests?limit=100&sortOrder=Desc${cursorParam}`;
         
-        const res: FriendRequestData = await this.callRobloxAPI(url, cookie, signal);
+        const res: FriendRequestData = await this.callRobloxAPI(url, cookie);
         
         if (!res || !Array.isArray(res.data)) {
           console.warn("[RobloxAPIService] Unexpected API payload structure.");
@@ -138,27 +137,22 @@ class RobloxAPIService {
 
     // 4. Construct Single Execution Thread
     this.activeFetchPromise = (async () => {
-      const controller = new AbortController();
-      const timeoutThreshold = isSlow ? 3000 : 7000; 
+      const timeoutThreshold = isSlow ? 5000 : 10000; 
       
       const timeoutId = setTimeout(() => {
         console.warn(`[RobloxAPIService] Request timeout exceeded threshold.`);
-        controller.abort();
       }, timeoutThreshold);
 
       try {
-        const freshTotal = await this.executeFetch(cookie, controller.signal);
+        const freshTotal = await this.executeFetch(cookie);
         clearTimeout(timeoutId);
-
         this.cachedCount = freshTotal;
         this.lastFetchTime = Date.now();
         return freshTotal;
-
       } catch (err: any) {
         clearTimeout(timeoutId);
         const isTimeout = err.name === 'AbortError';
         console.warn(`[RobloxAPIService] Fetch failure handled. Reason: ${isTimeout ? 'Timeout' : err.message}`);
-
         return this.cachedCount !== null ? this.cachedCount : 0;
       }
     })();
